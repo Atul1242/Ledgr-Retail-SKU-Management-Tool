@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/your-gif-id-here/demand-mirage-banner.gif" alt="The Demand Mirage Banner" width="100%">
+</div>
+
 # Sunrise Demand AI — Intelligent Inventory Optimization System
 
 **AI-powered demand forecasting and inventory optimization for FMCG distributors**
@@ -138,14 +142,34 @@ The following CSV files should be present in the `data/` directory:
 
 ## Dashboard Pages
 
-| Page | Description |
-|------|-------------|
-| **Overview** | Executive KPIs (stockout risk, revenue at risk, order value), top-10 stockout chart, movement donut, ABC distribution |
-| **Diwali Retrospective** | Top-14 predicted stockout SKUs with signal breakdown, per-SKU sales timeline with Diwali annotations, AI reasoning |
-| **6-Week Forecast** | SKU-level forecast with historical trend, 95% confidence bands, model type indicator |
-| **Reorder Plan** | Full recommendations table with risk flags, filterable by category (Urgent/Shelf-Life/Overstock/Perishable), reasoning modal, CSV download |
-| **SKU Classification** | Movement categories with top-20 volume chart, velocity vs consistency scatter plot, ABC revenue table with progress bars |
-| **Forecast Accuracy** | Overall MAPE score, per-SKU accuracy table with ratings, MAPE distribution histogram |
+### 1. Dashboard Overview
+![Overview Dashboard](assets/dash1.png)
+Executive KPIs (stockout risk, revenue at risk, order value), top-10 stockout chart, movement donut, ABC distribution.
+
+### 2. Interactive AI Assistant
+![AI Chatbot](assets/dash2.png)
+Chat with your data using Gemini 2.0 Flash to instantly get answers about reorders, SKUs, and forecasting methodology.
+
+### 3. Diwali Retrospective Analysis
+![Diwali Retrospective](assets/dash3.png)
+Top-14 predicted stockout SKUs with signal breakdown, per-SKU sales timeline with Diwali annotations, and AI reasoning.
+
+### 4. 6-Week Forecast Explorer
+![Forecast Explorer](assets/dash4.png)
+SKU-level forecast with historical trend, 95% confidence bands, and model type indicators.
+
+### 5. Reorder Recommendations
+![Reorder Plan](assets/dash5.png)
+Full recommendations table with risk flags, filterable by category (Urgent/Shelf-Life/Overstock/Perishable), reasoning modal, and CSV download.
+
+### 6. SKU Classification & Movement
+![SKU Classification](assets/dash6.png)
+Movement categories with top-20 volume chart, velocity vs consistency scatter plot, and ABC revenue table with progress bars.
+
+### 7. Forecast Accuracy Tracking
+![Forecast Accuracy](assets/dash7.png)
+Overall MAPE score, per-SKU accuracy table with ratings, and MAPE distribution histogram.
+
 
 ---
 
