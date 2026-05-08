@@ -1,7 +1,7 @@
 """
 app.py — Flask web application with Tabler UI dashboard
 Serves API endpoints and HTML pages for the demand forecasting system.
-Integrated with Flask-Login auth (Brief Part 2B).
+Integrated with Flask-Login auth (Brief Part 2B) and PostgreSQL (Phase 1).
 """
 import os, sys, json, threading
 import pandas as pd
@@ -16,6 +16,10 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "sunrise-dev-key-change-in-p
 from auth import auth_bp, init_auth
 app.register_blueprint(auth_bp)
 init_auth(app)
+
+# Database integration (Brief Phase 1 — PostgreSQL)
+from database import init_db, db
+init_db(app)
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PROCESSED = os.path.join(ROOT, "data", "processed")
@@ -95,19 +99,23 @@ def supplier_performance():
 
 # ── API Endpoints ──
 @app.route("/api/report")
+@login_required
 def api_report():
     return jsonify(load_json("monday_report.json"))
 
 @app.route("/api/stockout-analysis")
+@login_required
 def api_stockout():
     df = load_csv("diwali_stockout_analysis.csv")
     return jsonify(df.head(40).to_dict(orient="records"))
 
 @app.route("/api/top14")
+@login_required
 def api_top14():
     return jsonify(load_json("top_14_stockout_skus.json"))
 
 @app.route("/api/forecasts")
+@login_required
 def api_forecasts():
     df = load_csv("forecasts.csv")
     sku = request.args.get("sku")
@@ -116,10 +124,14 @@ def api_forecasts():
     return jsonify(df.to_dict(orient="records"))
 
 @app.route("/api/forecast-accuracy")
+@login_required
 def api_forecast_accuracy():
-    return jsonify(load_json("forecast_accuracy.json"))
+    """Phase 8 fix: Read from DB rolling MAPE, fallback to JSON."""
+    from database import get_forecast_accuracy_from_db
+    return jsonify(get_forecast_accuracy_from_db())
 
 @app.route("/api/reorder-recommendations")
+@login_required
 def api_reorder_recs():
     df = load_csv("reorder_recommendations.csv")
     flag = request.args.get("flag")
@@ -128,16 +140,19 @@ def api_reorder_recs():
     return jsonify(df.to_dict(orient="records"))
 
 @app.route("/api/sku-classification")
+@login_required
 def api_sku_class():
     df = load_csv("sku_classification.csv")
     return jsonify(df.to_dict(orient="records"))
 
 @app.route("/api/sku-list")
+@login_required
 def api_sku_list():
-    df = load_csv("sku_master.csv", DATA)
-    return jsonify(df[["sku_id", "product_name", "brand", "category"]].to_dict(orient="records"))
+    from database import get_sku_list
+    return jsonify(get_sku_list())
 
 @app.route("/api/sku-sales/<sku_id>")
+@login_required
 def api_sku_sales(sku_id):
     sales = load_csv("sales_classified.csv")
     if len(sales) == 0:
@@ -150,12 +165,14 @@ def api_sku_sales(sku_id):
     return jsonify(sku_data.to_dict(orient="records"))
 
 @app.route("/api/classification-report")
+@login_required
 def api_class_report():
     return jsonify(load_json("classification_report.json"))
 
 pipeline_status = {"running": False, "status": "idle", "error": None}
 
 @app.route("/api/run-pipeline", methods=["POST"])
+@login_required
 def api_run_pipeline():
     """Run pipeline asynchronously (Brief Phase 7 — async fix)."""
     if pipeline_status["running"]:
@@ -181,10 +198,12 @@ def api_run_pipeline():
     return jsonify({"status": "started", "message": "Pipeline started in background"})
 
 @app.route("/api/pipeline-status")
+@login_required
 def api_pipeline_status():
     return jsonify(pipeline_status)
 
 @app.route("/api/download-reorder")
+@login_required
 def download_reorder():
     path = os.path.join(PROCESSED, "reorder_recommendations.csv")
     if os.path.exists(path):
@@ -193,56 +212,36 @@ def download_reorder():
 
 # ── SKU Management API (Brief Part 2F) ──
 @app.route("/api/sku-list-full")
+@login_required
 def api_sku_list_full():
     """Full SKU master data for the management table."""
     df = load_csv("sku_master.csv", DATA)
     return jsonify(df.to_dict(orient="records"))
 
 @app.route("/api/sku/create", methods=["POST"])
+@login_required
 def api_sku_create():
-    """Add a new SKU to the master file."""
+    """Add a new SKU to the database (Phase 1 fix)."""
     try:
-        data = request.json
-        df = load_csv("sku_master.csv", DATA)
-        sku_id = data.get("sku_code", "").strip()
-        if not sku_id:
-            return jsonify({"status": "error", "message": "SKU code is required"})
-        if sku_id in df["sku_id"].values:
-            return jsonify({"status": "error", "message": f"{sku_id} already exists"})
-        new_row = {
-            "sku_id": sku_id,
-            "product_name": data.get("product_name", ""),
-            "brand": data.get("brand", ""),
-            "category": data.get("category", ""),
-            "subcategory": data.get("subcategory", ""),
-            "unit_price": float(data.get("unit_price", 0)),
-            "cost_price": float(data.get("cost_price", 0)),
-            "shelf_life_days": int(data.get("shelf_life_days", 365)),
-            "moq_from_supplier": int(data.get("moq_from_supplier", 6)),
-            "supplier_lead_time_days": int(data.get("supplier_lead_time_days", 7)),
-        }
-        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-        df.to_csv(os.path.join(DATA, "sku_master.csv"), index=False)
-        return jsonify({"status": "success", "message": f"SKU {sku_id} added successfully"})
+        from database import create_sku
+        ok, msg = create_sku(request.json)
+        return jsonify({"status": "success" if ok else "error", "message": msg})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
 @app.route("/api/sku/delete", methods=["POST"])
+@login_required
 def api_sku_delete():
-    """Delete a SKU from the master file."""
+    """Delete a SKU from the database (Phase 1 fix)."""
     try:
-        data = request.json
-        sku_id = data.get("sku_id", "").strip()
-        df = load_csv("sku_master.csv", DATA)
-        if sku_id not in df["sku_id"].values:
-            return jsonify({"status": "error", "message": f"{sku_id} not found"})
-        df = df[df["sku_id"] != sku_id]
-        df.to_csv(os.path.join(DATA, "sku_master.csv"), index=False)
-        return jsonify({"status": "success", "message": f"SKU {sku_id} deleted"})
+        from database import delete_sku
+        ok, msg = delete_sku(request.json.get("sku_id", "").strip())
+        return jsonify({"status": "success" if ok else "error", "message": msg})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
 @app.route("/api/sku/upload", methods=["POST"])
+@login_required
 def api_sku_upload():
     """Upload CSV to add/update SKUs."""
     try:
@@ -267,6 +266,7 @@ def api_sku_upload():
 
 # ── Data Quality API (Brief Part 5A) ──
 @app.route("/api/data-quality")
+@login_required
 def api_data_quality():
     """Data quality metrics from the classified sales data."""
     try:
@@ -367,59 +367,12 @@ def api_data_quality():
 
 # ── Supplier Performance API (Brief Part 5C) ──
 @app.route("/api/supplier-performance")
+@login_required
 def api_supplier_performance():
-    """Supplier lead time analytics from SKU master data."""
+    """Phase 9 fix: Supplier lead times from DB with P80 calculation."""
     try:
-        sku = load_csv("sku_master.csv", DATA)
-        if len(sku) == 0:
-            return jsonify({"suppliers": [], "avg_lead_time": 0})
-
-        import numpy as np
-        avg_lt = sku["supplier_lead_time_days"].mean()
-        p80_lt = float(np.percentile(sku["supplier_lead_time_days"].dropna(), 80))
-
-        # Group by brand (as supplier proxy)
-        brand_stats = sku.groupby("brand").agg(
-            avg_lt=("supplier_lead_time_days", "mean"),
-            min_lt=("supplier_lead_time_days", "min"),
-            max_lt=("supplier_lead_time_days", "max"),
-            avg_moq=("moq_from_supplier", "mean"),
-            sku_count=("sku_id", "count")
-        ).reset_index()
-
-        suppliers = []
-        for _, row in brand_stats.iterrows():
-            suppliers.append({
-                "name": row["brand"],
-                "sku_count": int(row["sku_count"]),
-                "avg_lt": round(float(row["avg_lt"]), 1),
-                "min_lt": int(row["min_lt"]),
-                "max_lt": int(row["max_lt"]),
-                "avg_moq": int(row["avg_moq"]),
-            })
-
-        # SKU details
-        sku_details = []
-        for _, row in sku.iterrows():
-            sku_details.append({
-                "sku_id": row["sku_id"],
-                "brand": row["brand"],
-                "product_name": row["product_name"],
-                "lead_time": int(row["supplier_lead_time_days"]),
-                "moq": int(row["moq_from_supplier"])
-            })
-
-        # Festive avg is estimated at 1.3x normal (based on brief's observation)
-        festive_avg = round(avg_lt * 1.3, 1)
-
-        return jsonify({
-            "avg_lead_time": round(avg_lt, 1),
-            "p80_lead_time": round(p80_lt, 1),
-            "festive_avg_lead_time": festive_avg,
-            "supplier_count": len(suppliers),
-            "suppliers": suppliers,
-            "sku_details": sku_details
-        })
+        from database import get_supplier_lead_times
+        return jsonify(get_supplier_lead_times())
     except Exception as e:
         return jsonify({"error": str(e), "suppliers": [], "avg_lead_time": 0})
 
@@ -648,6 +601,7 @@ def build_data_context():
     return "\n".join(ctx)
 
 @app.route("/api/chat", methods=["POST"])
+@login_required
 def api_chat():
     data_req = request.get_json()
     user_msg = data_req.get("message", "")
@@ -696,38 +650,12 @@ def batch_expiry():
     return render_template("batch_expiry.html", page="batch_expiry")
 
 @app.route("/api/batch-expiry")
+@login_required
 def api_batch_expiry():
-    """Batch expiry data from inventory snapshot."""
+    """Phase 12 fix: Real batch expiry from DB, not np.random."""
     try:
-        inv = load_csv("inventory_snapshot.csv", DATA)
-        sku = load_csv("sku_master.csv", DATA)
-        if len(inv) == 0 or len(sku) == 0:
-            return jsonify([])
-        merged = inv.merge(sku[["sku_id","product_name","brand","category","shelf_life_days"]], on="sku_id", how="left")
-        # Simulate batch expiry based on shelf_life_days and last_receipt_date
-        import numpy as np
-        from datetime import datetime, timedelta
-        results = []
-        for _, r in merged.iterrows():
-            shelf = int(r.get("shelf_life_days", 365))
-            stock = int(r.get("warehouse_stock", 0))
-            if stock <= 0:
-                continue
-            # Simulate batch with receipt date ~ 30 days ago
-            receipt = datetime.now() - timedelta(days=np.random.randint(10, shelf//2))
-            expiry = receipt + timedelta(days=shelf)
-            days_to_expiry = (expiry - datetime.now()).days
-            status = "expired" if days_to_expiry < 0 else "critical" if days_to_expiry < 14 else "warning" if days_to_expiry < 30 else "ok"
-            results.append({
-                "sku_id": r["sku_id"], "product_name": r.get("product_name",""),
-                "brand": r.get("brand",""), "category": r.get("category",""),
-                "batch_no": f"B-{r['sku_id'][-3:]}-{receipt.strftime('%m%d')}",
-                "qty": stock, "mfd_date": receipt.strftime("%Y-%m-%d"),
-                "expiry_date": expiry.strftime("%Y-%m-%d"),
-                "days_to_expiry": days_to_expiry, "status": status,
-                "shelf_life_days": shelf
-            })
-        return jsonify(sorted(results, key=lambda x: x["days_to_expiry"]))
+        from database import get_batch_expiry
+        return jsonify(get_batch_expiry())
     except Exception as e:
         return jsonify({"error": str(e)})
 
@@ -738,6 +666,7 @@ def purchase_orders():
     return render_template("purchase_orders.html", page="purchase_orders")
 
 @app.route("/api/generate-po", methods=["POST"])
+@login_required
 def api_generate_po():
     """Generate GST-compliant purchase order from reorder recommendations."""
     try:
@@ -814,31 +743,13 @@ def mobile_pwa(filename="index.html"):
     return send_file(os.path.join(mobile_dir, filename))
 
 @app.route("/api/sku/scan", methods=["POST"])
+@login_required
 def api_sku_scan():
-    """Receive barcode scan from PWA."""
+    """Phase 10 fix: Barcode scan writes to DB, not JSON file."""
     try:
-        data = request.json
-        sku_code = data.get("sku_code", "").strip()
-        if not sku_code:
-            return jsonify({"status": "error", "message": "SKU code required"})
-        # Log the scan
-        scan_log_path = os.path.join(DATA, "processed", "scan_log.json")
-        scans = []
-        if os.path.exists(scan_log_path):
-            with open(scan_log_path) as f:
-                scans = json.load(f)
-        scans.append({
-            "sku_code": sku_code,
-            "product_name": data.get("product_name", ""),
-            "qty_received": data.get("qty_received", 1),
-            "batch_expiry": data.get("batch_expiry", ""),
-            "scanned_at": data.get("scanned_at", ""),
-            "synced_at": pd.Timestamp.now().isoformat()
-        })
-        os.makedirs(os.path.dirname(scan_log_path), exist_ok=True)
-        with open(scan_log_path, "w") as f:
-            json.dump(scans, f, indent=2)
-        return jsonify({"status": "success", "message": f"Scan recorded: {sku_code}"})
+        from database import log_barcode_scan
+        ok, msg = log_barcode_scan(request.json)
+        return jsonify({"status": "success" if ok else "error", "message": msg})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
@@ -849,35 +760,22 @@ def audit_trail():
     return render_template("audit_trail.html", page="audit_trail")
 
 @app.route("/api/audit-trail")
+@login_required
 def api_audit_trail():
-    """Return inventory adjustment audit log."""
-    log_path = os.path.join(PROCESSED, "audit_trail.json")
-    if os.path.exists(log_path):
-        with open(log_path) as f:
-            return jsonify(json.load(f))
-    return jsonify([])
+    """Phase 14 fix: Audit trail from DB, not JSON file."""
+    from database import get_audit_trail
+    return jsonify(get_audit_trail())
 
 @app.route("/api/audit-trail/add", methods=["POST"])
+@login_required
 def api_audit_add():
-    """Record an inventory adjustment."""
+    """Phase 14 fix: Record adjustment to DB, not JSON file."""
     try:
+        from database import add_audit_entry
         data = request.json
-        log_path = os.path.join(PROCESSED, "audit_trail.json")
-        entries = []
-        if os.path.exists(log_path):
-            with open(log_path) as f:
-                entries = json.load(f)
-        entries.append({
-            "timestamp": pd.Timestamp.now().isoformat(),
-            "user": current_user.full_name if current_user.is_authenticated else "System",
-            "sku_id": data.get("sku_id", ""),
-            "field": data.get("field", "warehouse_stock"),
-            "old_value": data.get("old_value", 0),
-            "new_value": data.get("new_value", 0),
-            "reason": data.get("reason", "")
-        })
-        with open(log_path, "w") as f:
-            json.dump(entries, f, indent=2)
+        user_name = current_user.full_name if current_user.is_authenticated else "System"
+        add_audit_entry(user_name, data.get("sku_id",""), data.get("field","warehouse_stock"),
+                        data.get("old_value",0), data.get("new_value",0), data.get("reason",""))
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})

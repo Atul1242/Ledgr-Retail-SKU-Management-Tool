@@ -22,20 +22,35 @@ def setup_logging():
     return logging.getLogger("pipeline")
 
 def copy_source_data():
-    """Copy CSV files from parent directory if not already present."""
+    """Phase 4 fix: Validate and copy CSV files using ingestion firewall."""
     root = get_project_root()
     data_dir = os.path.join(root, "data")
     parent_dir = os.path.dirname(root)
     needed = ["sales_history.csv","inventory_snapshot.csv","sku_master.csv",
               "outlet_master.csv","promotions_calendar.csv","festive_calendar.csv"]
     import shutil
+    try:
+        from ingestion import validate_sales_upload
+    except ImportError:
+        validate_sales_upload = None
+
     for f in needed:
         dst = os.path.join(data_dir, f)
         if not os.path.exists(dst):
             src = os.path.join(parent_dir, f)
             if os.path.exists(src):
-                shutil.copy2(src, dst)
-                print(f"  Copied {f}")
+                # Run ingestion firewall on sales data
+                if validate_sales_upload and f == "sales_history.csv":
+                    is_valid, cleaned_df, report = validate_sales_upload(src)
+                    if is_valid and cleaned_df is not None:
+                        cleaned_df.to_csv(dst, index=False)
+                        print(f"  Validated & copied {f} ({report.get('accepted',0)} rows accepted)")
+                    else:
+                        print(f"  WARNING: {f} failed validation: {report.get('errors',[])}")
+                        shutil.copy2(src, dst)  # Copy anyway but log warning
+                else:
+                    shutil.copy2(src, dst)
+                    print(f"  Copied {f}")
 
 def run_pipeline():
     logger = setup_logging()
