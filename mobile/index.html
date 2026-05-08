@@ -60,10 +60,17 @@
 
     <div class="scan-result" id="scan-result">
       <div class="barcode-value" id="barcode-value">--</div>
+      <div id="product-lookup-status" style="font-size:11px;color:rgba(255,255,255,0.4);margin-bottom:8px"></div>
       <div class="form-group"><label>SKU Code</label><input id="f-sku" placeholder="Auto-filled from barcode"/></div>
       <div class="form-group"><label>Product Name</label><input id="f-name" placeholder="Enter product name"/></div>
+      <div class="form-group"><label>Brand</label><input id="f-brand" placeholder="Brand name"/></div>
       <div class="form-group"><label>Quantity Received</label><input id="f-qty" type="number" min="1" value="1"/></div>
       <div class="form-group"><label>Batch Expiry Date</label><input id="f-expiry" type="date"/></div>
+      <div id="new-sku-fields" style="display:none">
+        <div style="font-size:11px;color:#f59f00;font-weight:600;margin:8px 0;padding:6px 8px;background:rgba(245,159,0,0.1);border-radius:6px">⚠ SKU not found — will create a new entry</div>
+        <div class="form-group"><label>Unit Price ₹</label><input id="f-unit-price" type="number" step="0.01" value="0"/></div>
+        <div class="form-group"><label>Cost Price ₹</label><input id="f-cost-price" type="number" step="0.01" value="0"/></div>
+      </div>
       <button class="btn-submit" id="btn-submit" onclick="submitScan()">✓ Confirm & Save</button>
     </div>
   </div>
@@ -128,10 +135,35 @@
       document.getElementById('scan-result').classList.add('show');
       document.getElementById('barcode-value').textContent=value;
       document.getElementById('f-sku').value=value;
-      document.getElementById('scan-prompt').textContent='Barcode detected! Confirm details below.';
+      document.getElementById('scan-prompt').textContent='Barcode detected! Looking up product...';
       navigator.vibrate&&navigator.vibrate(100);
-      // Auto-resume scanning after 10 seconds
+      // Auto-lookup product from Open Food Facts
+      lookupProduct(value);
       setTimeout(()=>{scanning=true},10000);
+    }
+
+    // ── Product Lookup from Open Food Facts ──
+    async function lookupProduct(barcode){
+      const statusEl=document.getElementById('product-lookup-status');
+      statusEl.textContent='Looking up product...';
+      try{
+        const r=await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+        const d=await r.json();
+        if(d.status===1&&d.product){
+          const p=d.product;
+          document.getElementById('f-name').value=p.product_name||p.product_name_en||'';
+          document.getElementById('f-brand').value=p.brands||'';
+          statusEl.textContent='✓ Product found in Open Food Facts';
+          statusEl.style.color='#4ade80';
+        }else{
+          statusEl.textContent='Product not in database — enter details manually';
+          statusEl.style.color='#f59f00';
+        }
+      }catch(e){
+        statusEl.textContent='Lookup failed (offline?) — enter details manually';
+        statusEl.style.color='#f59f00';
+      }
+      document.getElementById('scan-prompt').textContent='Fill in details and confirm below.';
     }
 
     // ── Submit scan ──
@@ -150,10 +182,41 @@
       if(navigator.onLine){
         try{
           const token=localStorage.getItem('auth_token')||'';
+          // First try to log scan for existing SKU
           const r=await fetch('/api/sku/scan',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(data)});
           const d=await r.json();
-          if(d.status==='success'){showToast('Saved successfully!','success')}
-          else{await addToQueue(data);showToast('Queued for sync','success')}
+          if(d.status==='success'){
+            showToast('Saved! +'+data.qty_received+' units','success');
+            document.getElementById('new-sku-fields').style.display='none';
+          } else if(d.message&&d.message.includes('not found')){
+            // SKU doesn't exist — create it first
+            document.getElementById('new-sku-fields').style.display='block';
+            const brand=document.getElementById('f-brand').value.trim();
+            const createData={
+              sku_code:data.sku_code,
+              product_name:data.product_name,
+              brand:brand,
+              category:'personal_care',
+              unit_price:parseFloat(document.getElementById('f-unit-price').value)||0,
+              cost_price:parseFloat(document.getElementById('f-cost-price').value)||0,
+              shelf_life_days:365,
+              moq_from_supplier:6,
+              supplier_lead_time_days:7
+            };
+            if(!data.product_name){showToast('Product name required for new SKU','error');document.getElementById('btn-submit').disabled=false;return;}
+            const cr=await fetch('/api/sku/create',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(createData)});
+            const cd=await cr.json();
+            if(cd.status==='success'){
+              // Now log the stock
+              await fetch('/api/sku/scan',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(data)});
+              showToast('New SKU created + '+data.qty_received+' units added!','success');
+            }else{
+              showToast(cd.message||'Failed to create SKU','error');
+              document.getElementById('btn-submit').disabled=false;return;
+            }
+          } else{
+            await addToQueue(data);showToast('Queued for sync','success');
+          }
         }catch(e){await addToQueue(data);showToast('Offline — queued','success')}
       }else{
         await addToQueue(data);
@@ -164,7 +227,9 @@
       document.getElementById('btn-submit').disabled=false;
       // Reset form
       document.getElementById('f-sku').value='';document.getElementById('f-name').value='';
-      document.getElementById('f-qty').value='1';document.getElementById('f-expiry').value='';
+      document.getElementById('f-brand').value='';document.getElementById('f-qty').value='1';
+      document.getElementById('f-expiry').value='';document.getElementById('new-sku-fields').style.display='none';
+      document.getElementById('product-lookup-status').textContent='';
       document.getElementById('scan-result').classList.remove('show');
       document.getElementById('scan-prompt').textContent='Point camera at barcode to scan';
       scanning=true;lastScan='';

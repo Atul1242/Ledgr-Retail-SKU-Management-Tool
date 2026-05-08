@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="row align-items-center mb-4">
+  <div class="col">
+    <h2 class="page-title" style="font-size:22px;font-weight:700">Application Settings</h2>
+  </div>
+</div>
+
+<div class="row g-4">
+  <!-- Left Sidebar Navigation for Settings -->
+  <div class="col-md-3">
+    <div class="list-group list-group-transparent">
+      <a class="list-group-item list-group-item-action d-flex align-items-center active" href="#profile" data-bs-toggle="list">
+        <i class="ti ti-user me-2 text-muted"></i> My Profile
+      </a>
+      <a class="list-group-item list-group-item-action d-flex align-items-center" href="#notifications" data-bs-toggle="list">
+        <i class="ti ti-bell me-2 text-muted"></i> Notifications
+      </a>
+      <a class="list-group-item list-group-item-action d-flex align-items-center" href="#appearance" data-bs-toggle="list">
+        <i class="ti ti-palette me-2 text-muted"></i> Appearance
+      </a>
+      <a class="list-group-item list-group-item-action d-flex align-items-center" href="#security" data-bs-toggle="list">
+        <i class="ti ti-shield-lock me-2 text-muted"></i> Security
+      </a>
+      <a class="list-group-item list-group-item-action d-flex align-items-center" href="/audit-trail">
+        <i class="ti ti-history me-2 text-muted"></i> Audit Trail
+      </a>
+    </div>
+  </div>
+
+  <!-- Settings Content Area -->
+  <div class="col-md-9">
+    <div class="tab-content">
+      
+      <!-- Profile Settings -->
+      <div class="tab-pane active show" id="profile">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Profile Information</h3>
+          </div>
+          <div class="card-body">
+            <div class="row mb-4">
+              <div class="col-auto">
+                <div class="avatar avatar-xl rounded-circle text-white" style="background: var(--df-blue); font-size: 24px; font-weight: bold;">
+                  {{ current_user.initials }}
+                </div>
+              </div>
+              <div class="col">
+                <div class="mb-3">
+                  <button class="btn btn-primary"><i class="ti ti-upload me-2"></i>Change Avatar</button>
+                  <button class="btn btn-outline-danger ms-2">Delete</button>
+                </div>
+                <div class="text-muted">Max file size 2MB. JPG or PNG.</div>
+              </div>
+            </div>
+            <form>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label class="form-label">Username</label>
+                  <input type="text" class="form-control" value="{{ current_user.username }}">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Email Address</label>
+                  <input type="email" class="form-control" value="{{ current_user.username }}@deltaforecast.ai" readonly>
+                  <small class="form-hint">Email is managed by your organization.</small>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Role</label>
+                  <input type="text" class="form-control" value="Inventory Manager" readonly>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Location</label>
+                  <select class="form-select">
+                    <option selected>HQ - Central Warehouse</option>
+                    <option>Regional Distribution - North</option>
+                    <option>Regional Distribution - South</option>
+                  </select>
+                </div>
+              </div>
+            </form>
+          </div>
+          <div class="card-footer text-end">
+            <button class="btn btn-primary">Save Profile</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Notifications Settings -->
+      <div class="tab-pane" id="notifications">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Notification Preferences</h3>
+          </div>
+          <div class="card-body">
+            <p class="text-muted mb-4">Choose what updates you want to receive and how you want to receive them.</p>
+            
+            <h4 class="mb-3">Inventory Alerts</h4>
+            <label class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox" checked>
+              <span class="form-check-label d-flex flex-column">
+                <span class="fw-bold">Critical Stockouts</span>
+                <span class="text-muted" style="font-size:12px;">Notify me when an SKU drops below minimum safety stock.</span>
+              </span>
+            </label>
+            <label class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox" checked>
+              <span class="form-check-label d-flex flex-column">
+                <span class="fw-bold">Purchase Orders Approved</span>
+                <span class="text-muted" style="font-size:12px;">Get an alert when a PO is approved and dispatched.</span>
+              </span>
+            </label>
+
+            <h4 class="mb-3 mt-4">AI Forecasting</h4>
+            <label class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox" checked>
+              <span class="form-check-label d-flex flex-column">
+                <span class="fw-bold">Model Retrain Completion</span>
+                <span class="text-muted" style="font-size:12px;">Weekly summary when the LightGBM model finishes its retrain cycle.</span>
+              </span>
+            </label>
+            <label class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox">
+              <span class="form-check-label d-flex flex-column">
+                <span class="fw-bold">Anomaly Detection</span>
+                <span class="text-muted" style="font-size:12px;">Immediate alert if sudden demand spikes are detected.</span>
+              </span>
+            </label>
+          </div>
+          <div class="card-footer text-end">
+            <button class="btn btn-primary">Save Preferences</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Appearance Settings -->
+      <div class="tab-pane" id="appearance">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Appearance & UI</h3>
+          </div>
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Theme</label>
+                <select class="form-select">
+                  <option selected>System Default</option>
+                  <option>Light Theme</option>
+                  <option>Dark Theme</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Density</label>
+                <select class="form-select">
+                  <option>Compact (Data-heavy)</option>
+                  <option selected>Comfortable</option>
+                </select>
+              </div>
+              <div class="col-12 mt-4">
+                <label class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" checked>
+                  <span class="form-check-label">Enable UI Micro-animations</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="card-footer text-end">
+            <button class="btn btn-primary">Save Appearance</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Security Settings -->
+      <div class="tab-pane" id="security">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Security Settings</h3>
+          </div>
+          <div class="card-body">
+            <h4 class="mb-3">Change Password</h4>
+            <div class="row g-3 mb-4">
+              <div class="col-md-12">
+                <label class="form-label">Current Password</label>
+                <input type="password" class="form-control">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">New Password</label>
+                <input type="password" class="form-control">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Confirm New Password</label>
+                <input type="password" class="form-control">
+              </div>
+            </div>
+            
+            <h4 class="mb-3 mt-4">Two-Factor Authentication</h4>
+            <div class="d-flex align-items-center justify-content-between p-3 border rounded bg-light">
+              <div>
+                <strong class="d-block">Authenticator App</strong>
+                <span class="text-muted" style="font-size:12px;">Use Google Authenticator or Authy to generate security codes.</span>
+              </div>
+              <button class="btn btn-outline-primary">Enable</button>
+            </div>
+          </div>
+          <div class="card-footer text-end">
+            <button class="btn btn-primary">Update Password</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

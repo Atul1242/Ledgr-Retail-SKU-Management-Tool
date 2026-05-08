@@ -4,6 +4,7 @@ Serves API endpoints and HTML pages for the demand forecasting system.
 Integrated with Flask-Login auth (Brief Part 2B) and PostgreSQL (Phase 1).
 """
 import os, sys, json, threading
+from datetime import datetime, timedelta
 import pandas as pd
 import requests as http_requests
 from flask import Flask, render_template, jsonify, request, send_file
@@ -61,6 +62,11 @@ def retrospective():
 @login_required
 def forecast():
     return render_template("forecast.html", page="forecast")
+
+@app.route("/sku-performance")
+@login_required
+def sku_performance():
+    return render_template("sku_performance.html", page="sku_performance")
 
 @app.route("/reorder")
 @login_required
@@ -735,6 +741,142 @@ def api_upload_sales():
         return jsonify({"status":"error","message":str(e)})
 
 # ── Barcode Scanner PWA (Brief Phase 10) ──
+# ── Purchase Order Management APIs ──
+
+@app.route("/api/orders/approve", methods=["POST"])
+@login_required
+def api_orders_approve():
+    """Approve selected reorder recommendations → create PurchaseOrders."""
+    try:
+        from models import PurchaseOrder, POStatus, SKU
+        items = request.json.get("items", [])
+        if not items:
+            return jsonify({"status": "error", "message": "No items to approve"})
+        created = []
+        today = datetime.utcnow()
+        for item in items:
+            sku = SKU.query.filter_by(sku_code=item.get("sku_id", "")).first()
+            if not sku:
+                continue
+            po_num = f"PO-{today.strftime('%Y%m%d')}-{len(created)+1:03d}"
+            po = PurchaseOrder(
+                po_number=po_num,
+                created_date=today.date(),
+                sku_id=sku.id,
+                qty_ordered=int(item.get("qty", 0)),
+                unit_price=float(item.get("cost_price", sku.cost_price or 0)),
+                total_value=float(item.get("qty", 0)) * float(item.get("cost_price", sku.cost_price or 0)),
+                supplier_name=item.get("vendor", ""),
+                po_status=POStatus.APPROVED,
+                store_id='store-pune-001'
+            )
+            db.session.add(po)
+            created.append(po_num)
+        db.session.commit()
+        return jsonify({"status": "success", "message": f"{len(created)} orders approved", "po_numbers": created})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"status": "error", "message": str(e)})
+
+@app.route("/api/orders/approved")
+@login_required
+def api_orders_approved():
+    """List all approved purchase orders."""
+    from models import PurchaseOrder, POStatus, SKU
+    orders = db.session.query(PurchaseOrder, SKU).join(
+        SKU, PurchaseOrder.sku_id == SKU.id
+    ).filter(PurchaseOrder.po_status == POStatus.APPROVED).order_by(
+        PurchaseOrder.created_date.desc()
+    ).all()
+    return jsonify([{
+        "po_number": po.po_number,
+        "sku_id": sku.sku_code,
+        "product_name": sku.product_name,
+        "brand": sku.brand,
+        "qty_ordered": po.qty_ordered,
+        "unit_price": float(po.unit_price or 0),
+        "total_value": float(po.total_value or 0),
+        "supplier_name": po.supplier_name or "",
+        "created_date": po.created_date.isoformat() if po.created_date else "",
+        "po_status": po.po_status,
+        "lead_time": sku.supplier_lead_time_days or 7,
+        "expected_date": (po.created_date + timedelta(days=sku.supplier_lead_time_days or 7)).isoformat() if po.created_date else ""
+    } for po, sku in orders])
+
+@app.route("/api/orders/in-transit")
+@login_required
+def api_orders_in_transit():
+    """List all in-transit (approved but not received) orders with ETA."""
+    from models import PurchaseOrder, POStatus, SKU
+    orders = db.session.query(PurchaseOrder, SKU).join(
+        SKU, PurchaseOrder.sku_id == SKU.id
+    ).filter(PurchaseOrder.po_status.in_([POStatus.APPROVED])).order_by(
+        PurchaseOrder.created_date.asc()
+    ).all()
+    today = datetime.utcnow().date()
+    result = []
+    for po, sku in orders:
+        lead_days = sku.supplier_lead_time_days or 7
+        expected = po.created_date + timedelta(days=lead_days) if po.created_date else today
+        days_remaining = (expected - today).days
+        progress = max(0, min(100, int((1 - days_remaining / max(lead_days, 1)) * 100)))
+        status = "delayed" if days_remaining < 0 else "arriving_soon" if days_remaining <= 2 else "on_track"
+        result.append({
+            "po_number": po.po_number,
+            "sku_id": sku.sku_code,
+            "product_name": sku.product_name,
+            "qty_ordered": po.qty_ordered,
+            "supplier_name": po.supplier_name or "",
+            "order_date": po.created_date.isoformat() if po.created_date else "",
+            "expected_date": expected.isoformat(),
+            "days_remaining": days_remaining,
+            "progress_pct": progress,
+            "status": status
+        })
+    return jsonify(result)
+
+@app.route("/api/orders/receive", methods=["POST"])
+@login_required
+def api_orders_receive():
+    """Mark an order as received."""
+    from models import PurchaseOrder, POStatus
+    po_number = request.json.get("po_number", "")
+    po = PurchaseOrder.query.filter_by(po_number=po_number).first()
+    if not po:
+        return jsonify({"status": "error", "message": "PO not found"})
+    po.po_status = POStatus.RECEIVED
+    db.session.commit()
+    return jsonify({"status": "success", "message": f"{po_number} marked as received"})
+
+# ── SKU Update API ──
+
+@app.route("/api/sku/update", methods=["POST"])
+@login_required
+def api_sku_update():
+    """Update an existing SKU's details."""
+    try:
+        from models import SKU
+        data = request.json
+        sku_code = data.get("sku_id", "").strip()
+        if not sku_code:
+            return jsonify({"status": "error", "message": "SKU code required"})
+        sku = SKU.query.filter_by(sku_code=sku_code).first()
+        if not sku:
+            return jsonify({"status": "error", "message": f"{sku_code} not found"})
+        if "product_name" in data: sku.product_name = data["product_name"]
+        if "brand" in data: sku.brand = data["brand"]
+        if "category" in data: sku.category = data["category"]
+        if "unit_price" in data: sku.unit_price = float(data["unit_price"])
+        if "cost_price" in data: sku.cost_price = float(data["cost_price"])
+        if "shelf_life_days" in data: sku.shelf_life_days = int(data["shelf_life_days"])
+        if "moq_from_supplier" in data: sku.moq_from_supplier = int(data["moq_from_supplier"])
+        if "supplier_lead_time_days" in data: sku.supplier_lead_time_days = int(data["supplier_lead_time_days"])
+        db.session.commit()
+        return jsonify({"status": "success", "message": f"{sku_code} updated successfully"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"status": "error", "message": str(e)})
+
 @app.route("/mobile/")
 @app.route("/mobile/<path:filename>")
 def mobile_pwa(filename="index.html"):
@@ -756,8 +898,15 @@ def api_sku_scan():
 # ── Inventory Audit Trail (Brief Phase 14) ──
 @app.route("/audit-trail")
 @login_required
-def audit_trail():
+def page_audit_trail():
+    """Phase 6: Inventory Audit Trail."""
     return render_template("audit_trail.html", page="audit_trail")
+
+@app.route("/settings")
+@login_required
+def page_settings():
+    """Application Settings & Profile."""
+    return render_template("settings.html", page="settings")
 
 @app.route("/api/audit-trail")
 @login_required

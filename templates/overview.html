@@ -13,12 +13,16 @@
     <div class="df-card-body">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
-          <div class="df-kpi-label">Lost Sales (Festive SKU-012):</div>
-          <div class="df-kpi-value" id="kpi-lost-sales">₹45,000</div>
+          <div class="df-kpi-label text-muted fw-semibold text-uppercase" style="font-size:11px;letter-spacing:0.5px">Projected Lost Sales (Next 14 Days)</div>
+          <div class="df-kpi-value d-flex align-items-center gap-2 mt-1" style="font-size: 24px;">
+            <span id="kpi-lost-sales">₹45,000</span>
+            <span class="text-danger" style="font-size:12px; font-weight:600;"><i class="ti ti-trending-up"></i> +12% vs LW</span>
+          </div>
+          <div style="font-size:11px; color:#64748B; margin-top: 4px;" id="kpi-lost-subtitle">Highest Risk: SKU-012 (Festive Promo)</div>
         </div>
-        <span class="df-badge-critical" id="kpi-lost-badge">CRITICAL</span>
+        <span class="df-badge-critical" id="kpi-lost-badge" style="padding: 4px 8px;">CRITICAL</span>
       </div>
-      <div id="spark-lost" style="margin-top:8px;height:50px"></div>
+      <div id="spark-lost" style="margin-top:12px;height:45px"></div>
     </div>
   </div>
   <!-- Card 2: Warehouse Capacity -->
@@ -26,25 +30,33 @@
     <div class="df-card-body">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
-          <div class="df-kpi-label">Warehouse Capacity:</div>
-          <div class="df-kpi-value" id="kpi-warehouse">78%</div>
+          <div class="df-kpi-label text-muted fw-semibold text-uppercase" style="font-size:11px;letter-spacing:0.5px">Hub-Level Warehouse Capacity</div>
+          <div class="df-kpi-value d-flex align-items-center gap-2 mt-1" style="font-size: 24px;">
+            <span id="kpi-warehouse">78%</span>
+            <span class="text-success" style="font-size:12px; font-weight:600;"><i class="ti ti-trending-down"></i> -5% vs LW</span>
+          </div>
+          <div style="font-size:11px; color:#64748B; margin-top: 4px;">Based on total system inventory vs allocated limits</div>
         </div>
-        <span class="df-badge-ok" id="kpi-wh-badge">OK</span>
+        <span class="df-badge-ok" id="kpi-wh-badge" style="padding: 4px 8px;">OK</span>
       </div>
-      <div id="spark-warehouse" style="margin-top:8px;height:50px"></div>
+      <div id="spark-warehouse" style="margin-top:12px;height:45px"></div>
     </div>
   </div>
-  <!-- Card 3: MAPE Score -->
+  <!-- Card 3: Forecast Accuracy (MAPE) -->
   <div class="df-card">
     <div class="df-card-body">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
-          <div class="df-kpi-label">MAPE Score (Weighted Avg):</div>
-          <div class="df-kpi-value" id="kpi-mape">14.5%</div>
+          <div class="df-kpi-label text-muted fw-semibold text-uppercase" style="font-size:11px;letter-spacing:0.5px">AI Forecast Accuracy (MAPE)</div>
+          <div class="df-kpi-value d-flex align-items-center gap-2 mt-1" style="font-size: 24px;">
+            <span id="kpi-mape">14.5%</span>
+            <span class="text-success" style="font-size:12px; font-weight:600;"><i class="ti ti-trending-down"></i> -1.2% (Improved)</span>
+          </div>
+          <div style="font-size:11px; color:#64748B; margin-top: 4px;">Weighted Average across top 10 volatile SKUs</div>
         </div>
-        <span class="df-badge-good" id="kpi-mape-badge">GOOD</span>
+        <span class="df-badge-good" id="kpi-mape-badge" style="padding: 4px 8px; background-color: #DCFCE7; color: #16A34A; border-radius: 4px; font-size: 10px; font-weight: 700;">GOOD</span>
       </div>
-      <div id="spark-mape" style="margin-top:8px;height:50px"></div>
+      <div id="spark-mape" style="margin-top:12px;height:45px"></div>
     </div>
   </div>
 </div>
@@ -73,14 +85,13 @@
 </div>
 
 <!-- ── BOTTOM PANELS ROW ── -->
-<div style="display:grid;grid-template-columns:35% 25% 18% 22%;gap:16px">
-  <!-- Panel 1: Weekly Demand vs Forecast -->
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+  <!-- Panel 1: SKU Ordering Urgency Pie Chart -->
   <div class="df-card">
     <div class="df-card-header">
-      <div class="df-card-title" style="font-size:13px">Weekly Demand vs. Forecast</div>
-      <select class="df-btn-outline" id="sku-selector" onchange="updateForecastChart()" style="font-size:11px;padding:4px 8px;border-radius:4px;cursor:pointer"><option>Select...</option></select>
+      <div class="df-card-title" style="font-size:13px"><i class="ti ti-chart-pie" style="color:#3B82F6;margin-right:4px"></i>SKU Ordering Urgency</div>
     </div>
-    <div class="df-card-body" style="padding:12px"><div id="chart-forecast" style="height:200px"></div></div>
+    <div class="df-card-body" style="padding:12px"><div id="chart-urgency" style="height:220px"></div></div>
   </div>
   <!-- Panel 2: Top 5 Overstock -->
   <div class="df-card">
@@ -109,28 +120,6 @@
       </div>
     </div>
   </div>
-  <!-- Panel 4: Supply Chain Chatbot (inline preview) -->
-  <div class="df-card">
-    <div class="df-card-header" style="background:#0D1B2A;border:none">
-      <div>
-        <div style="font-size:13px;font-weight:600;color:#fff">Supply Chain Assistant</div>
-        <div style="font-size:10px;color:rgba(255,255,255,0.5)">(RAG Vector-Based)</div>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:14px" onclick="toggleChat()"><i class="ti ti-arrows-maximize"></i></button>
-        <button style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:14px">×</button>
-      </div>
-    </div>
-    <div style="padding:14px;background:#F8FAFC;min-height:140px;display:flex;flex-direction:column;gap:8px;font-size:12px">
-      <div style="background:#fff;border:1px solid #E2E8F0;border-radius:8px;padding:8px 10px;max-width:85%;color:#64748B;border-bottom-left-radius:2px">Ask about specific SKU or order reasoning...</div>
-      <div style="background:#3B82F6;color:#fff;border-radius:8px;padding:8px 10px;max-width:85%;align-self:flex-end;border-bottom-right-radius:2px">How line SKU?</div>
-      <div style="background:#fff;border:1px solid #E2E8F0;border-radius:8px;padding:8px 10px;max-width:85%;color:#1E293B;border-bottom-left-radius:2px;font-size:11px"><i class="ti ti-brain" style="color:#3B82F6;margin-right:4px"></i>Sku wbhenve order order reasoning, SKU-012.</div>
-    </div>
-    <div style="display:flex;padding:10px;border-top:1px solid #E2E8F0;gap:6px;background:#fff">
-      <input type="text" placeholder="Write a message..." style="flex:1;border:1px solid #D1D5DB;border-radius:6px;padding:6px 10px;font-size:12px;outline:none" onclick="toggleChat()">
-      <button style="background:#3B82F6;color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer" onclick="toggleChat()"><i class="ti ti-send"></i></button>
-    </div>
-  </div>
 </div>
 {% endblock %}
 
@@ -157,6 +146,12 @@ async function loadDashboard(){
     if(topLoss){
       document.getElementById('kpi-lost-sales').textContent='₹'+Number(topLoss.revenue_at_risk||45000).toLocaleString('en-IN');
       document.getElementById('kpi-lost-badge').textContent='CRITICAL';
+      document.getElementById('kpi-lost-subtitle').textContent=`Highest Risk: ${topLoss.sku_id} (${topLoss.product_name||'Promo'})`;
+    }else{
+      document.getElementById('kpi-lost-sales').textContent='₹0';
+      document.getElementById('kpi-lost-badge').textContent='SAFE';
+      document.getElementById('kpi-lost-badge').className='df-badge-ok';
+      document.getElementById('kpi-lost-subtitle').textContent='No stockout risks detected.';
     }
 
     // Warehouse capacity
@@ -179,10 +174,22 @@ async function loadDashboard(){
     // Reorder table
     renderTable(reorder.slice(0,8));
 
-    // SKU selector
-    const sel=document.getElementById('sku-selector');
-    sel.innerHTML='<option value="">Select...</option>'+reorder.slice(0,10).map(r=>`<option value="${r.sku_id}">${r.sku_id}</option>`).join('');
-    if(reorder.length>0){sel.value=reorder[0].sku_id;updateForecastChart();}
+    // ── SKU Urgency Pie Chart ──
+    const urgentCount=reorder.filter(r=>r.flags&&r.flags.includes('STOCKOUT_RISK')).length;
+    const needsReorder=reorder.filter(r=>r.final_reorder_qty>0&&!(r.flags||'').includes('STOCKOUT_RISK')).length;
+    const totalSKUs=40;
+    const healthyCount=Math.max(0,totalSKUs-urgentCount-needsReorder);
+    new ApexCharts(document.getElementById('chart-urgency'),{
+      chart:{type:'donut',height:220},
+      series:[urgentCount,needsReorder,healthyCount],
+      labels:['🚩 Urgent / Stockout Risk','⚠️ Needs Reorder','✅ Healthy'],
+      colors:['#EF4444','#F59E0B','#22C55E'],
+      plotOptions:{pie:{donut:{size:'62%',labels:{show:true,total:{show:true,label:'Total SKUs',fontSize:'12px',color:'#64748B',formatter:()=>totalSKUs},value:{fontSize:'22px',fontWeight:700,color:'#1E293B'}}}}},
+      legend:{position:'bottom',fontSize:'11px',markers:{width:10,height:10,radius:3},itemMargin:{horizontal:8,vertical:4}},
+      dataLabels:{enabled:true,formatter:(val,opts)=>opts.w.config.series[opts.seriesIndex],style:{fontSize:'13px',fontWeight:700},dropShadow:{enabled:false}},
+      stroke:{width:2,colors:['#fff']},
+      tooltip:{y:{formatter:val=>val+' SKUs'}}
+    }).render();
 
     // Overstock chart
     const overstockData=reorder.filter(r=>r.overstock_value>0).sort((a,b)=>b.overstock_value-a.overstock_value).slice(0,5);
@@ -196,8 +203,7 @@ async function loadDashboard(){
         dataLabels:{enabled:false},grid:{borderColor:'#E2E8F0',strokeDashArray:4}
       }).render();
     } else {
-      // Show top 5 by order value if no overstock
-      const topCost=reorder.sort((a,b)=>(b.order_value_inr||0)-(a.order_value_inr||0)).slice(0,5);
+      const topCost=[...reorder].sort((a,b)=>(b.order_value_inr||0)-(a.order_value_inr||0)).slice(0,5);
       new ApexCharts(document.getElementById('chart-overstock'),{
         chart:{type:'bar',height:190,toolbar:{show:false}},
         series:[{name:'Order Value',data:topCost.map(r=>r.order_value_inr||0)}],
@@ -236,7 +242,7 @@ function renderTable(data){
     const stockoutDate=r.stockout_date_projected||'—';
     return`<tr>
       <td style="font-weight:600">${r.sku_id}</td>
-      <td>${r.product_name||''}</td>
+      <td><div style="display:flex;align-items:center;gap:8px"><div style="width:36px;height:36px;background:#F8FAFC;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #E2E8F0;flex-shrink:0"><img src="/static/images/products/${r.sku_id}.png" alt="${r.product_name||''}" style="width:32px;height:32px;object-fit:contain" onerror="this.style.display='none';this.parentElement.innerHTML='<i class=\\'ti ti-package\\' style=\\'font-size:14px;color:#94A3B8\\'></i>'"></div><span style="font-size:12px">${r.product_name||''}</span></div></td>
       <td>${r.forecast_6w_total||0}w</td>
       <td>${stockoutDate}</td>
       <td>${(r.mape_pct||0).toFixed(1)}%</td>
@@ -247,45 +253,6 @@ function renderTable(data){
       <td>${flagHtml}</td>
     </tr>`;
   }).join('');
-}
-
-// ── Forecast chart ──
-let forecastChart=null;
-async function updateForecastChart(){
-  const sku=document.getElementById('sku-selector').value;
-  if(!sku)return;
-  try{
-    const fc=await fetch('/api/forecast-data?sku='+sku).then(r=>r.json());
-    const labels=(fc.weeks||['Mon','Tue','We','Thu','Fri','Sat','Sat','Sat','Pon']).map(w=>{
-      if(typeof w==='string'&&w.length>6)return w.substring(5,10);return w;
-    });
-    const actual=fc.actual||[120,130,100,140,110,150,null,null,null];
-    const predicted=fc.predicted||[115,128,105,138,115,145,155,160,148];
-    const upper=fc.upper||predicted.map(v=>v?v*1.15:null);
-    const lower=fc.lower||predicted.map(v=>v?v*0.85:null);
-
-    if(forecastChart)forecastChart.destroy();
-    forecastChart=new ApexCharts(document.getElementById('chart-forecast'),{
-      chart:{type:'line',height:190,toolbar:{show:false},zoom:{enabled:false}},
-      series:[
-        {name:'Actual',data:actual},
-        {name:'Predicted',data:predicted},
-        {name:'Upper',data:upper},
-        {name:'Lower',data:lower}
-      ],
-      xaxis:{categories:labels,labels:{style:{fontSize:'10px',colors:'#94A3B8'}}},
-      yaxis:{min:0,max:200,labels:{style:{fontSize:'10px',colors:'#94A3B8'}}},
-      stroke:{width:[2,2,0,0],curve:'smooth',dashArray:[0,0,0,0]},
-      colors:['#94A3B8','#3B82F6','transparent','transparent'],
-      fill:{type:['solid','solid','solid','solid'],opacity:[1,1,0.1,0]},
-      markers:{size:[3,3,0,0]},
-      grid:{borderColor:'#E2E8F0',strokeDashArray:4},
-      legend:{position:'bottom',fontSize:'10px',markers:{width:10,height:3,radius:0}},
-      annotations:{xaxis:[{x:labels[Math.floor(labels.length*0.65)]||'Fri',borderColor:'#94A3B8',strokeDashArray:4,label:{text:'Next festival: Diwali pre-ramp',style:{fontSize:'9px',color:'#64748B',background:'#F0F4F8',padding:{top:2,bottom:2,left:4,right:4}}}}]},
-      tooltip:{shared:true,intersect:false}
-    });
-    forecastChart.render();
-  }catch(e){console.error('Forecast chart error:',e);}
 }
 
 loadDashboard();

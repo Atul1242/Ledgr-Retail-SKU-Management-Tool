@@ -198,10 +198,10 @@
       <a class="df-nav-item {% if page=='outlets' or page=='purchase_orders' %}active{% endif %}" href="/outlets"><i class="ti ti-building-store"></i>Outlets</a>
       <a class="df-nav-item {% if page=='retrospective' or page=='classification' or page=='data_quality' or page=='supplier' or page=='batch_expiry' %}active{% endif %}" href="/retrospective"><i class="ti ti-report-analytics"></i>Reports<span class="df-nav-dot"></span></a>
       <a class="df-nav-item {% if page=='forecast' or page=='accuracy' %}active{% endif %}" href="/forecast"><i class="ti ti-brain"></i>AI Forecasting</a>
-      <a class="df-nav-item" href="/mobile/" target="_blank"><i class="ti ti-scan"></i>Barcode Scanner</a>
+      <a class="df-nav-item {% if page=='sku_performance' %}active{% endif %}" href="/sku-performance"><i class="ti ti-chart-line"></i>SKU Performance</a>
     </div>
     <div class="df-nav-bottom">
-      <a class="df-nav-item {% if page=='audit_trail' %}active{% endif %}" href="/audit-trail"><i class="ti ti-settings"></i>Settings</a>
+      <a class="df-nav-item {% if page=='settings' %}active{% endif %}" href="/settings"><i class="ti ti-settings"></i>Settings</a>
       <a class="df-nav-item" href="#"><i class="ti ti-help-circle"></i>Help & Support</a>
     </div>
   </nav>
@@ -214,9 +214,46 @@
     </div>
     <div class="df-topbar-right">
       <div class="df-monday-pill"><span class="dot"></span>Monday Morning Report (Auto-Generated: 08:00 AM IST)</div>
-      <div class="df-topbar-icon"><i class="ti ti-upload"></i></div>
-      <div class="df-topbar-icon"><i class="ti ti-message-circle"></i></div>
-      <div class="df-topbar-icon"><i class="ti ti-bell"></i><span class="dot"></span></div>
+      
+      <!-- Upload Dropdown -->
+      <div class="dropdown">
+        <div class="df-topbar-icon" data-bs-toggle="dropdown"><i class="ti ti-upload"></i></div>
+        <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow">
+          <div class="dropdown-header">Quick Uploads</div>
+          <a class="dropdown-item" href="/sku-management"><i class="ti ti-file-spreadsheet me-2"></i>SKU Master CSV</a>
+        </div>
+      </div>
+      
+      <!-- Messages Dropdown -->
+      <div class="dropdown">
+        <div class="df-topbar-icon" data-bs-toggle="dropdown"><i class="ti ti-message-circle"></i></div>
+        <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow p-3 text-muted" style="width: 250px;">
+          <div class="dropdown-header mb-2">Messages</div>
+          <div class="text-center"><i class="ti ti-messages text-muted mb-2" style="font-size:24px"></i><br>No new messages</div>
+        </div>
+      </div>
+
+      <!-- Notifications Dropdown -->
+      <div class="dropdown">
+        <div class="df-topbar-icon" data-bs-toggle="dropdown"><i class="ti ti-bell"></i><span class="dot"></span></div>
+        <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow p-0" style="width: 320px; overflow: hidden;">
+          <div class="dropdown-header bg-light border-bottom">System Notifications</div>
+          <div class="list-group list-group-flush" style="font-size:13px;">
+            <a href="/reorder" class="list-group-item list-group-item-action py-3">
+              <div class="d-flex align-items-center">
+                <div class="avatar bg-red-lt me-3"><i class="ti ti-alert-triangle text-danger"></i></div>
+                <div><strong class="d-block text-danger">Stockout Alert</strong>SKU-012 is critically low.</div>
+              </div>
+            </a>
+            <a href="/forecast" class="list-group-item list-group-item-action py-3">
+              <div class="d-flex align-items-center">
+                <div class="avatar bg-green-lt me-3"><i class="ti ti-brain text-success"></i></div>
+                <div><strong class="d-block text-success">Model Retrained</strong>LightGBM v3.1 active.</div>
+              </div>
+            </a>
+          </div>
+        </div>
+      </div>
       {% if current_user.is_authenticated %}
       <div class="df-user" data-bs-toggle="dropdown">
         <div class="df-avatar">{{ current_user.initials }}</div>
@@ -252,38 +289,47 @@
 
   <!-- ── CHATBOT WIDGET ── -->
   <style>
-    .chat-fab{position:fixed;bottom:24px;right:24px;z-index:9998;width:48px;height:48px;border-radius:50%;background:var(--df-blue);color:#fff;border:none;cursor:pointer;box-shadow:0 4px 12px rgba(59,130,246,0.3);display:flex;align-items:center;justify-content:center;font-size:22px;transition:all 0.2s;}
-    .chat-fab:hover{transform:scale(1.05);box-shadow:0 6px 16px rgba(59,130,246,0.4);}
-    .chat-window{position:fixed;bottom:84px;right:24px;z-index:9998;width:360px;max-height:480px;border-radius:12px;overflow:hidden;display:none;flex-direction:column;background:#fff;box-shadow:0 8px 32px rgba(0,0,0,0.15);border:1px solid var(--df-border);}
+    .chat-fab{position:fixed;bottom:24px;right:24px;z-index:9998;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg, var(--df-blue), #1D4ED8);color:#fff;border:none;cursor:pointer;box-shadow:0 8px 24px rgba(37,99,235,0.4);display:flex;align-items:center;justify-content:center;font-size:26px;transition:all 0.3s cubic-bezier(0.175,0.885,0.32,1.275);}
+    .chat-fab:hover{transform:scale(1.1);box-shadow:0 12px 28px rgba(37,99,235,0.5);}
+    .chat-window{position:fixed;bottom:96px;right:24px;z-index:9998;width:380px;max-height:550px;border-radius:16px;overflow:hidden;display:none;flex-direction:column;background:#fff;box-shadow:0 12px 40px rgba(0,0,0,0.2);border:1px solid rgba(226,232,240,0.8);transform-origin:bottom right;animation:chatOpen 0.3s ease;}
     .chat-window.open{display:flex;}
-    .chat-header{background:var(--df-navy);color:#fff;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;}
-    .chat-header h4{margin:0;font-size:14px;font-weight:600;color:#fff;}
-    .chat-header p{margin:0;font-size:10px;color:rgba(255,255,255,0.5);}
-    .chat-header button{background:none;border:none;color:#fff;cursor:pointer;font-size:18px;opacity:0.7;}
-    .chat-header button:hover{opacity:1;}
-    .chat-messages{flex:1;overflow-y:auto;padding:14px;max-height:300px;min-height:160px;background:#F8FAFC;display:flex;flex-direction:column;gap:10px;}
-    .chat-msg{max-width:85%;padding:8px 12px;border-radius:8px;font-size:13px;line-height:1.5;}
-    .chat-msg.user{align-self:flex-end;background:var(--df-blue);color:#fff;border-bottom-right-radius:2px;}
-    .chat-msg.bot{align-self:flex-start;background:#fff;color:var(--df-text);border:1px solid var(--df-border);border-bottom-left-radius:2px;}
-    .chat-msg.bot strong{color:var(--df-blue);}
-    .chat-input-area{display:flex;padding:10px;border-top:1px solid var(--df-border);background:#fff;gap:8px;}
-    .chat-input-area input{flex:1;border:1px solid #D1D5DB;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;}
-    .chat-input-area input:focus{border-color:var(--df-blue);}
-    .chat-input-area button{background:var(--df-blue);color:#fff;border:none;border-radius:6px;padding:8px 14px;cursor:pointer;font-weight:600;font-size:13px;}
-    .chat-typing{display:flex;gap:4px;padding:6px 12px;align-self:flex-start;}
-    .chat-typing span{width:6px;height:6px;background:#adb5bd;border-radius:50%;animation:typing 1.4s infinite;}
+    @keyframes chatOpen{from{opacity:0;transform:scale(0.9) translateY(20px);}to{opacity:1;transform:scale(1) translateY(0);}}
+    .chat-header{background:linear-gradient(135deg, var(--df-navy), #1E293B);color:#fff;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;position:relative;overflow:hidden;}
+    .chat-header::before{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:radial-gradient(circle, rgba(255,255,255,0.05) 10%, transparent 60%);pointer-events:none;}
+    .chat-header-info{display:flex;align-items:center;gap:12px;}
+    .chat-avatar{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;font-size:18px;border:1px solid rgba(255,255,255,0.2);}
+    .chat-header h4{margin:0;font-size:15px;font-weight:600;color:#fff;}
+    .chat-header p{margin:0;font-size:11px;color:rgba(255,255,255,0.6);margin-top:2px;display:flex;align-items:center;gap:4px;}
+    .chat-header p::before{content:'';display:block;width:6px;height:6px;background:#22C55E;border-radius:50%;box-shadow:0 0 6px #22C55E;}
+    .chat-header button{background:rgba(255,255,255,0.1);border:none;color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;transition:background 0.2s;}
+    .chat-header button:hover{background:rgba(255,255,255,0.2);}
+    .chat-messages{flex:1;overflow-y:auto;padding:20px 16px;max-height:380px;min-height:200px;background:#F8FAFC;display:flex;flex-direction:column;gap:16px;scroll-behavior:smooth;}
+    .chat-msg{max-width:85%;padding:10px 14px;border-radius:12px;font-size:13.5px;line-height:1.5;position:relative;box-shadow:0 1px 2px rgba(0,0,0,0.05);}
+    .chat-msg.user{align-self:flex-end;background:linear-gradient(to right, var(--df-blue), #2563EB);color:#fff;border-bottom-right-radius:4px;}
+    .chat-msg.bot{align-self:flex-start;background:#fff;color:var(--df-text);border:1px solid var(--df-border);border-bottom-left-radius:4px;}
+    .chat-msg.bot strong{color:#1D4ED8;font-weight:600;}
+    .chat-input-area{display:flex;padding:12px 16px;border-top:1px solid var(--df-border);background:#fff;gap:10px;align-items:center;}
+    .chat-input-area input{flex:1;border:1px solid #CBD5E1;border-radius:24px;padding:10px 16px;font-size:13.5px;outline:none;background:#F8FAFC;transition:all 0.2s;}
+    .chat-input-area input:focus{border-color:var(--df-blue);background:#fff;box-shadow:0 0 0 3px rgba(59,130,246,0.1);}
+    .chat-input-area button{background:var(--df-blue);color:#fff;border:none;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;transition:all 0.2s;flex-shrink:0;}
+    .chat-input-area button:hover:not(:disabled){background:#1D4ED8;transform:scale(1.05);}
+    .chat-input-area button:disabled{background:#9CA3AF;cursor:not-allowed;}
+    .chat-typing{display:flex;gap:4px;padding:12px 16px;align-self:flex-start;background:#fff;border:1px solid var(--df-border);border-radius:12px;border-bottom-left-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,0.05);}
+    .chat-typing span{width:6px;height:6px;background:#94A3B8;border-radius:50%;animation:typing 1.4s infinite;}
     .chat-typing span:nth-child(2){animation-delay:0.2s;}
     .chat-typing span:nth-child(3){animation-delay:0.4s;}
-    @keyframes typing{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-4px);opacity:1}}
   </style>
-  <button class="chat-fab" onclick="toggleChat()" title="Supply Chain Assistant"><i class="ti ti-message-chatbot" id="chat-icon"></i></button>
+  <button class="chat-fab" onclick="toggleChat()" title="Supply Chain Assistant"><i class="ti ti-sparkles" id="chat-icon"></i></button>
   <div class="chat-window" id="chat-window">
     <div class="chat-header">
-      <div><h4>Supply Chain Assistant</h4><p>(RAG Vector-Based)</p></div>
-      <button onclick="toggleChat()">×</button>
+      <div class="chat-header-info">
+        <div class="chat-avatar"><i class="ti ti-robot"></i></div>
+        <div><h4>Supply Chain AI</h4><p>Online & Ready</p></div>
+      </div>
+      <button onclick="toggleChat()"><i class="ti ti-x"></i></button>
     </div>
     <div class="chat-messages" id="chat-messages">
-      <div class="chat-msg bot">Ask about specific SKU or order reasoning...<br><br>Try: <em>"How line SKU?"</em> or <em>"Which SKUs need urgent reorder?"</em></div>
+      <div class="chat-msg bot">Hello! I'm your Supply Chain Assistant.<br><br>Ask me about specific SKUs, order reasoning, or inventory health.<br><br>Try: <em>"Which SKUs need urgent reorder?"</em></div>
     </div>
     <div class="chat-input-area">
       <input type="text" id="chat-input" placeholder="Write a message..." onkeydown="if(event.key==='Enter')sendChat()">

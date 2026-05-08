@@ -6,15 +6,25 @@
 </div>
 
 <!-- Toolbar -->
+<!-- Toolbar -->
 <div class="df-toolbar">
-  <button class="df-btn-outline"><i class="ti ti-filter"></i>Filter</button>
-  <select class="df-btn-outline" style="padding:6px 12px;cursor:pointer">
-    <option>All Channels</option><option>Kirana</option><option>Supermarket</option><option>Modern Trade</option><option>Standalone</option>
+  <div class="dropdown">
+    <button class="df-btn-outline" data-bs-toggle="dropdown"><i class="ti ti-filter"></i>Advanced Filter</button>
+    <div class="dropdown-menu p-3" style="width:250px;">
+      <label class="form-label">Minimum Volume (₹)</label>
+      <input type="range" class="form-range mb-3" min="10000" max="100000" value="10000">
+      <label class="form-label">Service Status</label>
+      <select class="form-select mb-3"><option>All</option><option>ACTIVE</option><option>RISK</option><option>PAUSED</option></select>
+      <button class="btn btn-primary w-100 btn-sm">Apply Filters</button>
+    </div>
+  </div>
+  <select class="df-btn-outline" style="padding:6px 12px;cursor:pointer" id="outlet-filter" onchange="filterOutlets()">
+    <option value="All">All Channels</option><option value="Kirana">Kirana</option><option value="Supermarket">Supermarket</option><option value="Modern Trade">Modern Trade</option><option value="Standalone">Standalone</option>
   </select>
   <div style="flex:1"></div>
-  <button class="df-btn-outline"><i class="ti ti-chart-bar"></i>Analyze Channel Performance</button>
-  <button class="df-btn-outline"><i class="ti ti-download"></i>Export CSV</button>
-  <button class="btn btn-primary" style="font-size:13px;padding:7px 18px;border-radius:6px"><i class="ti ti-plus me-1"></i>Add New Outlet</button>
+  <button class="df-btn-outline" onclick="showModal('analyzeModal')"><i class="ti ti-chart-bar"></i>Analyze Channel Performance</button>
+  <button class="df-btn-outline" id="btn-export" onclick="exportCSV()"><i class="ti ti-download"></i>Export CSV</button>
+  <button class="btn btn-primary" style="font-size:13px;padding:7px 18px;border-radius:6px" onclick="showModal('addOutletModal')"><i class="ti ti-plus me-1"></i>Add New Outlet</button>
 </div>
 
 <!-- Table -->
@@ -35,6 +45,57 @@
       <button><i class="ti ti-chevron-left"></i> Prev</button>
       <button class="active">1</button><button>2</button><button>3</button>
       <button>Next <i class="ti ti-chevron-right"></i></button>
+    </div>
+  </div>
+</div>
+
+<!-- Add New Outlet Modal -->
+<div class="modal fade" id="addOutletModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="ti ti-plus me-2 text-primary"></i>Register New Outlet</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="hideModal('addOutletModal')"></button>
+      </div>
+      <div class="modal-body">
+        <form id="add-outlet-form">
+          <div class="mb-3"><label class="form-label">Outlet Name</label><input type="text" id="add-out-name" class="form-control" required placeholder="e.g. Reliance Fresh"></div>
+          <div class="mb-3"><label class="form-label">Channel Type</label>
+            <select class="form-select" id="add-out-channel"><option>Kirana</option><option>Supermarket</option><option>Modern Trade</option><option>Standalone</option></select>
+          </div>
+          <div class="mb-3"><label class="form-label">Location Area</label><input type="text" id="add-out-area" class="form-control" required placeholder="e.g. MG Road"></div>
+          <div class="mb-3"><label class="form-label">Assigned Salesman</label><input type="text" id="add-out-salesman" class="form-control" required placeholder="e.g. Ramesh Kumar"></div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" onclick="hideModal('addOutletModal')">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="submitAddOutlet()"><i class="ti ti-check me-1"></i>Save Outlet</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Analyze Channel Modal -->
+<div class="modal fade" id="analyzeModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="ti ti-chart-bar me-2 text-primary"></i>Channel Performance Analysis</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="hideModal('analyzeModal')"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row text-center mb-4">
+          <div class="col"><div class="text-muted text-uppercase fw-semibold" style="font-size:11px">Top Channel</div><h3 class="mt-1 text-primary">Modern Trade</h3></div>
+          <div class="col"><div class="text-muted text-uppercase fw-semibold" style="font-size:11px">Fastest Growing</div><h3 class="mt-1 text-success">Supermarket (+15.4%)</h3></div>
+          <div class="col"><div class="text-muted text-uppercase fw-semibold" style="font-size:11px">At Risk</div><h3 class="mt-1 text-warning">Standalone (-5.8%)</h3></div>
+        </div>
+        <div style="height: 250px; display:flex; align-items:center; justify-content:center; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0;">
+          <div class="text-center">
+             <i class="ti ti-chart-area-line text-muted" style="font-size:48px;"></i>
+             <p class="text-muted mt-2">Historical Volume Analysis rendered here.</p>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -71,8 +132,8 @@ const outlets=[
   {id:'0000110',name:'Nashik Road Depot',channel:'Kirana',area:'Nashik',volume:29800,growth:1.8,status:'RISK (Low Vol)',invoice:'2026-10-30',salesman:'Vijay Kumar'},
 ];
 
-function renderOutlets(){
-  document.getElementById('outlets-tbody').innerHTML=outlets.map(o=>{
+function renderOutlets(filteredOutlets = outlets){
+  document.getElementById('outlets-tbody').innerHTML=filteredOutlets.map(o=>{
     const chBadge=o.channel==='Kirana'?'<span class="df-flag" style="background:#DBEAFE;color:#1D4ED8">'+o.channel+'</span>':
       o.channel==='Supermarket'?'<span class="df-flag df-flag-ok">'+o.channel+'</span>':
       o.channel==='Modern Trade'?'<span class="df-flag" style="background:#E0E7FF;color:#4338CA">'+o.channel+'</span>':
@@ -87,9 +148,18 @@ function renderOutlets(){
       <td>₹${o.volume.toLocaleString('en-IN')}</td>
       <td style="${growthColor};font-weight:600">${o.growth>0?'+':''}${o.growth}%</td>
       <td>${stBadge}</td><td>${o.invoice}</td><td>${o.salesman}</td>
-      <td><button class="df-btn-outline" style="padding:3px 8px;font-size:11px" onclick="event.stopPropagation()"><i class="ti ti-eye"></i> View</button> <button class="df-btn-outline" style="padding:3px 8px;font-size:11px" onclick="event.stopPropagation()"><i class="ti ti-pencil"></i> Edit</button></td>
+      <td><button class="df-btn-outline" style="padding:3px 8px;font-size:11px" onclick="event.stopPropagation(); alert('Viewing outlet details...');"><i class="ti ti-eye"></i> View</button> <button class="df-btn-outline" style="padding:3px 8px;font-size:11px" onclick="event.stopPropagation(); alert('Editing outlet details...');"><i class="ti ti-pencil"></i> Edit</button></td>
     </tr>`;
   }).join('');
+}
+
+function filterOutlets() {
+  const channel = document.getElementById('outlet-filter').value;
+  if(channel === 'All') {
+    renderOutlets(outlets);
+  } else {
+    renderOutlets(outlets.filter(o => o.channel === channel));
+  }
 }
 
 let demandChart=null,channelChart=null;
@@ -107,6 +177,45 @@ function selectOutlet(id,tr){
   document.getElementById('outlet-panel').classList.add('open');
   document.querySelector('.df-main').classList.add('panel-open');
 }
+function showModal(id) {
+  const m = document.getElementById(id);
+  if(typeof bootstrap !== 'undefined') { (bootstrap.Modal.getInstance(m)||new bootstrap.Modal(m)).show(); }
+  else { m.classList.add('show'); m.style.display='block'; document.body.classList.add('modal-open'); }
+}
+function hideModal(id) {
+  const m = document.getElementById(id);
+  if(typeof bootstrap !== 'undefined') { const i=bootstrap.Modal.getInstance(m); if(i) i.hide(); }
+  else { m.classList.remove('show'); m.style.display='none'; document.body.classList.remove('modal-open'); }
+}
+
+function exportCSV() {
+  const btn = document.getElementById('btn-export');
+  btn.innerHTML = '<i class="ti ti-loader" style="animation: spin 1s linear infinite;"></i> Exporting...';
+  setTimeout(() => {
+    btn.innerHTML = '<i class="ti ti-download"></i> Export CSV';
+    alert("outlets_master_data.csv downloaded successfully!");
+  }, 1000);
+}
+
+function submitAddOutlet() {
+  const name = document.getElementById('add-out-name').value;
+  const channel = document.getElementById('add-out-channel').value;
+  const area = document.getElementById('add-out-area').value;
+  const salesman = document.getElementById('add-out-salesman').value;
+  
+  if(!name || !area || !salesman) { alert("Please fill all fields"); return; }
+  
+  const newOut = {
+    id: '0000' + Math.floor(100 + Math.random() * 900),
+    name, channel, area, volume: 0, growth: 0.0, status: 'ACTIVE', invoice: new Date().toISOString().split('T')[0], salesman
+  };
+  
+  outlets.unshift(newOut); // add to top
+  filterOutlets(); // re-render
+  hideModal('addOutletModal');
+  document.getElementById('add-outlet-form').reset();
+}
+
 function closeOutletPanel(){document.getElementById('outlet-panel').classList.remove('open');document.querySelector('.df-main').classList.remove('panel-open');}
 renderOutlets();
 </script>
