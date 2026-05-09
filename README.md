@@ -33,6 +33,8 @@ cd Ledgr-Retail-SKU-Management-Tool
 
 First boot takes ~60 seconds — Postgres init, schema migration, seed of 40 SKUs / 320 outlets / supplier metadata / 103 batches, and an automatic pipeline run.
 
+> **Need step-by-step guidance?** See **[SETUP.md](SETUP.md)** for the full handoff guide — prerequisites, OpenRouter key setup, Android scanner pairing, troubleshooting, and production hardening.
+
 | | |
 |---|---|
 | **Dashboard** | [http://localhost:5000](http://localhost:5000) |
