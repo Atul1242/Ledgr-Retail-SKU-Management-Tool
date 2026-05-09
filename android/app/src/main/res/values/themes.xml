@@ -1,0 +1,12 @@
+<resources>
+    <!-- Compose drives almost everything; this only has to keep the system bars
+         dark and provide a quick splash before MainActivity composes. -->
+    <style name="Theme.LedgrScanner" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ledgr_navy</item>
+        <item name="android:statusBarColor">@color/ledgr_navy</item>
+        <item name="android:navigationBarColor">@color/ledgr_navy</item>
+    </style>
+    <style name="Theme.LedgrScanner.Splash" parent="Theme.LedgrScanner">
+        <item name="android:windowBackground">@drawable/splash</item>
+    </style>
+</resources>

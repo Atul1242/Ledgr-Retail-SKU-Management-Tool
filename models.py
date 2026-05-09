@@ -1,5 +1,5 @@
 """
-models.py — SQLAlchemy ORM Models for Sunrise Demand AI
+models.py — SQLAlchemy ORM Models for Ledgr
 Phase 1: PostgreSQL Database Schema (Brief Part 2A)
 
 All tables defined exactly as specified in the Master Development Brief.
@@ -89,6 +89,8 @@ class Store(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=gen_uuid)
     name = db.Column(db.String(255), nullable=False)
     city = db.Column(db.String(100), nullable=False)
+    state = db.Column(db.String(50), default='Maharashtra')
+    gstin = db.Column(db.String(20))
     owner_id = db.Column(db.String(36), db.ForeignKey('users.id'))
 
 
@@ -107,6 +109,9 @@ class SKU(db.Model):
     supplier_lead_time_days = db.Column(db.Integer, default=7)
     hsn_code = db.Column(db.String(20))       # GST compliance — Part 6A
     gst_rate = db.Column(db.Numeric(5, 2))    # GST compliance — Part 6A
+    supplier_name = db.Column(db.String(255))     # for PO generation
+    supplier_gstin = db.Column(db.String(20))     # 15-char GSTIN
+    supplier_state = db.Column(db.String(50))     # determines IGST vs CGST+SGST
     p80_lead_time_days = db.Column(db.Numeric(5, 1))   # computed weekly — Part 5C
     mean_lead_time_days = db.Column(db.Numeric(5, 1))  # computed weekly — Part 5C
     store_id = db.Column(db.String(36), db.ForeignKey('stores.id'))
@@ -186,7 +191,9 @@ class PurchaseOrder(db.Model):
     """GST-compliant purchase orders — Part 6A."""
     __tablename__ = 'purchase_orders'
     id = db.Column(db.String(36), primary_key=True, default=gen_uuid)
-    po_number = db.Column(db.String(30), unique=True)  # PO-YYYYMMDD-NNN
+    # PO-YYYYMMDD-NNN. NOT unique — one DB row per line item, all rows in a
+    # PO share the same po_number (uniqueness enforced as composite below).
+    po_number = db.Column(db.String(30), index=True)
     created_date = db.Column(db.Date, default=datetime.utcnow)
     sku_id = db.Column(db.String(36), db.ForeignKey('skus.id'))
     qty_ordered = db.Column(db.Integer, default=0)

@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-  <title>Sunrise Scanner</title>
+  <title>Ledgr Scanner</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/images/ledgr-mark.png"/>
+  <link rel="apple-touch-icon" href="/static/images/ledgr-mark.png"/>
   <meta name="theme-color" content="#1a1c2e"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
@@ -47,7 +49,7 @@
 </head>
 <body>
   <div class="header">
-    <span class="brand">☀ Sunrise Scanner</span>
+    <span class="brand" style="display:inline-flex;align-items:center;gap:8px;font-weight:700;color:#FACC15"><img src="/static/images/ledgr-mark.png" alt="Ledgr" style="height:26px;width:26px"/>Ledgr Scanner</span>
     <span class="status" id="net-status">●</span>
   </div>
 
@@ -261,6 +263,15 @@
     }
 
     startCamera();
+
+    // Service worker registration — Brief Part 6B (offline app shell).
+    if('serviceWorker' in navigator){
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/mobile/service-worker.js', {scope: '/mobile/'})
+          .then(reg => console.log('SW registered:', reg.scope))
+          .catch(err => console.warn('SW registration failed:', err));
+      });
+    }
   </script>
 </body>
 </html>

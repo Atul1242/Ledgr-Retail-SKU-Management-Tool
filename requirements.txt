@@ -26,3 +26,6 @@ requests>=2.31
 # Utilities
 openpyxl>=3.1
 python-dotenv>=1.0
+
+# PDF generation (Brief Part 6A — GST-compliant PO download)
+reportlab>=4.0

@@ -3,7 +3,11 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>{% block title %}Dashboard{% endblock %} — DeltaForecast</title>
+  <meta name="csrf-token" content="{{ csrf_token }}"/>
+  {% if current_user.is_authenticated %}<meta name="user-role" content="{{ current_user.role }}"/>{% endif %}
+  <title>{% block title %}Dashboard{% endblock %} — Ledgr</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/images/ledgr-mark.png"/>
+  <link rel="apple-touch-icon" href="/static/images/ledgr-mark.png"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.2.0/dist/css/tabler.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -32,11 +36,8 @@
       display: flex; flex-direction: column; z-index: 100; overflow-y: auto;
     }
     .df-sidebar::-webkit-scrollbar { width: 0; }
-    .df-brand { display: flex; align-items: center; gap: 8px; padding: 18px 16px 20px; }
-    .df-brand-icon { width: 28px; height: 28px; }
-    .df-brand-icon svg { width: 28px; height: 28px; }
-    .df-brand-text { font-size: 17px; font-weight: 700; color: #fff; }
-    .df-brand-text span { color: #60A5FA; }
+    .df-brand { display: flex; align-items: center; justify-content: center; padding: 16px 14px 18px; }
+    .df-brand-img { max-width: 170px; width: 100%; height: auto; display: block; }
     .df-nav { flex: 1; padding: 0 8px; }
     .df-nav-item {
       display: flex; align-items: center; gap: 10px; padding: 0 12px; height: 40px;
@@ -50,6 +51,20 @@
     .df-nav-item.active i { opacity: 1; }
     .df-nav-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--df-blue); margin-left: auto; }
     .df-nav-bottom { padding: 8px; border-top: 1px solid rgba(255,255,255,0.08); margin-top: auto; }
+    .df-nav-sub {
+      max-height: 0; overflow: hidden; transition: max-height 0.2s ease; padding-left: 14px;
+    }
+    .df-nav-sub.open { max-height: 500px; }
+    .df-nav-sub-item {
+      display: flex; align-items: center; gap: 8px; padding: 6px 10px; height: 32px;
+      color: rgba(255,255,255,0.55); font-size: 12px; text-decoration: none;
+      border-radius: 4px; transition: all 0.15s;
+    }
+    .df-nav-sub-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+    .df-nav-sub-item.active { color: #fff; background: rgba(59,130,246,0.18); }
+    .df-nav-sub-item i { font-size: 14px; opacity: 0.7; }
+    .df-nav-caret { margin-left: auto; font-size: 12px; transition: transform 0.2s; }
+    .df-nav-caret.open { transform: rotate(180deg); }
 
     /* ── TOP BAR ── */
     .df-topbar {
@@ -185,21 +200,48 @@
 <body>
   <!-- ── SIDEBAR ── -->
   <nav class="df-sidebar">
-    <div class="df-brand">
-      <div class="df-brand-icon">
-        <svg viewBox="0 0 32 32" fill="none"><polygon points="16,2 30,28 2,28" fill="#3B82F6"/></svg>
-      </div>
-      <div class="df-brand-text">Delta<span>Forecast</span></div>
-    </div>
+    <a href="/" class="df-brand" aria-label="Ledgr — home">
+      <img src="/static/images/ledgr-brand.png" alt="Ledgr" class="df-brand-img"/>
+    </a>
     <div class="df-nav">
       <a class="df-nav-item {% if page=='overview' %}active{% endif %}" href="/"><i class="ti ti-layout-dashboard"></i>Dashboard</a>
       <a class="df-nav-item {% if page=='sku_management' %}active{% endif %}" href="/sku-management"><i class="ti ti-package"></i>SKU Management</a>
       <a class="df-nav-item {% if page=='reorder' %}active{% endif %}" href="/reorder"><i class="ti ti-shopping-cart"></i>Orders & Reorders</a>
-      <a class="df-nav-item {% if page=='outlets' or page=='purchase_orders' %}active{% endif %}" href="/outlets"><i class="ti ti-building-store"></i>Outlets</a>
-      <a class="df-nav-item {% if page=='retrospective' or page=='classification' or page=='data_quality' or page=='supplier' or page=='batch_expiry' %}active{% endif %}" href="/retrospective"><i class="ti ti-report-analytics"></i>Reports<span class="df-nav-dot"></span></a>
-      <a class="df-nav-item {% if page=='forecast' or page=='accuracy' %}active{% endif %}" href="/forecast"><i class="ti ti-brain"></i>AI Forecasting</a>
+      <a class="df-nav-item {% if page=='purchase_orders' %}active{% endif %}" href="/purchase-orders" data-roles="owner,manager"><i class="ti ti-receipt"></i>Purchase Orders</a>
+      <a class="df-nav-item {% if page=='outlets' %}active{% endif %}" href="/outlets"><i class="ti ti-building-store"></i>Outlets</a>
+
+      {% set reports_active = page in ['retrospective','classification','data_quality','supplier','batch_expiry'] %}
+      <a class="df-nav-item {% if reports_active %}active{% endif %}" href="#" onclick="toggleNavGroup('reports'); return false;">
+        <i class="ti ti-report-analytics"></i>Reports
+        <i class="ti ti-chevron-down df-nav-caret {% if reports_active %}open{% endif %}" id="caret-reports"></i>
+      </a>
+      <div class="df-nav-sub {% if reports_active %}open{% endif %}" id="sub-reports">
+        <a class="df-nav-sub-item {% if page=='retrospective' %}active{% endif %}" href="/retrospective"><i class="ti ti-history"></i>Diwali Retrospective</a>
+        <a class="df-nav-sub-item {% if page=='classification' %}active{% endif %}" href="/classification"><i class="ti ti-categories"></i>Data Classification</a>
+        <a class="df-nav-sub-item {% if page=='data_quality' %}active{% endif %}" href="/data-quality"><i class="ti ti-checkup-list"></i>Data Quality</a>
+        <a class="df-nav-sub-item {% if page=='supplier' %}active{% endif %}" href="/supplier-performance"><i class="ti ti-truck-delivery"></i>Supplier Performance</a>
+        <a class="df-nav-sub-item {% if page=='batch_expiry' %}active{% endif %}" href="/batch-expiry"><i class="ti ti-calendar-x"></i>Batch Expiry</a>
+      </div>
+
+      {% set forecast_active = page in ['forecast','accuracy'] %}
+      <a class="df-nav-item {% if forecast_active %}active{% endif %}" href="#" onclick="toggleNavGroup('forecast'); return false;">
+        <i class="ti ti-brain"></i>AI Forecasting
+        <i class="ti ti-chevron-down df-nav-caret {% if forecast_active %}open{% endif %}" id="caret-forecast"></i>
+      </a>
+      <div class="df-nav-sub {% if forecast_active %}open{% endif %}" id="sub-forecast">
+        <a class="df-nav-sub-item {% if page=='forecast' %}active{% endif %}" href="/forecast"><i class="ti ti-chart-line"></i>Forecasts</a>
+        <a class="df-nav-sub-item {% if page=='accuracy' %}active{% endif %}" href="/accuracy"><i class="ti ti-target"></i>Forecast Accuracy</a>
+      </div>
+
       <a class="df-nav-item {% if page=='sku_performance' %}active{% endif %}" href="/sku-performance"><i class="ti ti-chart-line"></i>SKU Performance</a>
+      <a class="df-nav-item {% if page=='audit_trail' %}active{% endif %}" href="/audit-trail"><i class="ti ti-clipboard-list"></i>Audit Trail</a>
     </div>
+    <script>
+      function toggleNavGroup(name) {
+        document.getElementById('sub-' + name).classList.toggle('open');
+        document.getElementById('caret-' + name).classList.toggle('open');
+      }
+    </script>
     <div class="df-nav-bottom">
       <a class="df-nav-item {% if page=='settings' %}active{% endif %}" href="/settings"><i class="ti ti-settings"></i>Settings</a>
       <a class="df-nav-item" href="#"><i class="ti ti-help-circle"></i>Help & Support</a>
@@ -234,24 +276,13 @@
         </div>
       </div>
 
-      <!-- Notifications Dropdown -->
+      <!-- Notifications Dropdown — populated from real pipeline & reorder data -->
       <div class="dropdown">
-        <div class="df-topbar-icon" data-bs-toggle="dropdown"><i class="ti ti-bell"></i><span class="dot"></span></div>
-        <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow p-0" style="width: 320px; overflow: hidden;">
+        <div class="df-topbar-icon" data-bs-toggle="dropdown" id="notif-toggle"><i class="ti ti-bell"></i><span class="dot" id="notif-dot" style="display:none"></span></div>
+        <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow p-0" style="width: 340px; overflow: hidden;">
           <div class="dropdown-header bg-light border-bottom">System Notifications</div>
-          <div class="list-group list-group-flush" style="font-size:13px;">
-            <a href="/reorder" class="list-group-item list-group-item-action py-3">
-              <div class="d-flex align-items-center">
-                <div class="avatar bg-red-lt me-3"><i class="ti ti-alert-triangle text-danger"></i></div>
-                <div><strong class="d-block text-danger">Stockout Alert</strong>SKU-012 is critically low.</div>
-              </div>
-            </a>
-            <a href="/forecast" class="list-group-item list-group-item-action py-3">
-              <div class="d-flex align-items-center">
-                <div class="avatar bg-green-lt me-3"><i class="ti ti-brain text-success"></i></div>
-                <div><strong class="d-block text-success">Model Retrained</strong>LightGBM v3.1 active.</div>
-              </div>
-            </a>
+          <div class="list-group list-group-flush" style="font-size:13px;" id="notif-list">
+            <div class="list-group-item text-muted text-center py-3" style="font-size:12px">Loading…</div>
           </div>
         </div>
       </div>
@@ -286,6 +317,93 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.2.0/dist/js/tabler.min.js"></script>
+  <script>
+  // CSRF: wrap fetch so state-changing requests include the per-session token.
+  (function(){
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    const token = meta ? meta.getAttribute('content') : '';
+    const roleMeta = document.querySelector('meta[name="user-role"]');
+    window.userRole = roleMeta ? roleMeta.getAttribute('content') : 'anonymous';
+    const orig = window.fetch;
+    window.fetch = function(input, init){
+      init = init || {};
+      const method = (init.method || 'GET').toUpperCase();
+      if (method !== 'GET' && method !== 'HEAD' && token) {
+        init.headers = Object.assign({}, init.headers || {}, {'X-CSRF-Token': token});
+      }
+      return orig.call(this, input, init);
+    };
+    window.attachCsrfToForms = function(){
+      document.querySelectorAll('form').forEach(f => {
+        if (f.method && f.method.toUpperCase() === 'POST' && !f.querySelector('input[name="csrf_token"]')) {
+          const inp = document.createElement('input');
+          inp.type = 'hidden'; inp.name = 'csrf_token'; inp.value = token;
+          f.appendChild(inp);
+        }
+      });
+    };
+    // Hide elements with data-roles="owner" / "owner,manager" if current user
+    // is not in the allowed set. Helps keep a salesman from clicking dead buttons.
+    window.applyRoleVisibility = function(){
+      document.querySelectorAll('[data-roles]').forEach(el => {
+        const allowed = el.getAttribute('data-roles').split(',').map(s=>s.trim()).filter(Boolean);
+        if (allowed.length && !allowed.includes(window.userRole)) {
+          el.style.display = 'none';
+        }
+      });
+    };
+    document.addEventListener('DOMContentLoaded', window.attachCsrfToForms);
+    document.addEventListener('DOMContentLoaded', window.applyRoleVisibility);
+  })();
+
+  // Product image helper. Renders an <img> from /static/images/products/SKU-XXX.png
+  // and falls back to a category-themed Tabler icon if the image is missing
+  // (so a SKU added at runtime without an image still renders cleanly).
+  window.productIconHTML = function(sku, size){
+    size = size || 36;
+    const cat = (sku && sku.category) || '';
+    const map = {
+      personal_care: {icon:'ti-bottle',  bg:'#FEE2E2', fg:'#DC2626'},
+      household:     {icon:'ti-spray',   bg:'#DBEAFE', fg:'#2563EB'},
+      packaged_food: {icon:'ti-bread',   bg:'#FEF3C7', fg:'#B45309'},
+    };
+    const m = map[cat] || {icon:'ti-package', bg:'#F1F5F9', fg:'#64748B'};
+    const inner = Math.round(size * 0.92);
+    const fontSize = Math.round(size * 0.5);
+    const fallback = `'<i class=\\'ti ${m.icon}\\' style=\\'font-size:${fontSize}px;color:${m.fg}\\'></i>'`;
+    const skuId = (sku && sku.sku_id) || '';
+    if (!skuId) {
+      return `<div style="width:${size}px;height:${size}px;background:${m.bg};border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid ${m.fg}22"><i class="ti ${m.icon}" style="font-size:${fontSize}px;color:${m.fg}"></i></div>`;
+    }
+    return `<div style="width:${size}px;height:${size}px;background:#FFFFFF;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid #E2E8F0;overflow:hidden"><img src="/static/images/products/${skuId}.png" alt="" style="width:${inner}px;height:${inner}px;object-fit:contain" onerror="this.style.display='none';this.parentElement.style.background='${m.bg}';this.parentElement.style.borderColor='${m.fg}22';this.parentElement.innerHTML=${fallback}"/></div>`;
+  };
+
+  // Toast helper — call window.toast('message', 'success'|'error'|'info').
+  // Replaces ad-hoc alert() calls across templates.
+  (function(){
+    const css = `
+      .df-toast-stack{position:fixed;top:74px;right:24px;z-index:10000;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+      .df-toast{min-width:240px;max-width:380px;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:500;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.18);animation:dfToastIn 0.2s ease;pointer-events:auto;display:flex;align-items:center;gap:8px}
+      .df-toast-success{background:#16A34A}
+      .df-toast-error{background:#DC2626}
+      .df-toast-info{background:#2563EB}
+      .df-toast-warn{background:#D97706}
+      @keyframes dfToastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+    `;
+    const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
+    let stack;
+    function ensureStack(){ if(!stack){ stack=document.createElement('div'); stack.className='df-toast-stack'; document.body.appendChild(stack);} return stack; }
+    window.toast = function(message, kind, ttl){
+      kind = kind || 'info'; ttl = ttl || 3500;
+      const t = document.createElement('div');
+      t.className = 'df-toast df-toast-' + (kind === 'success' ? 'success' : kind === 'error' ? 'error' : kind === 'warn' ? 'warn' : 'info');
+      const icon = kind === 'success' ? 'ti-check' : kind === 'error' ? 'ti-alert-circle' : kind === 'warn' ? 'ti-alert-triangle' : 'ti-info-circle';
+      t.innerHTML = `<i class="ti ${icon}"></i><span style="flex:1">${message}</span>`;
+      ensureStack().appendChild(t);
+      setTimeout(()=>{ t.style.opacity='0'; t.style.transform='translateX(20px)'; setTimeout(()=>t.remove(), 250); }, ttl);
+    };
+  })();
+  </script>
   {% block scripts %}{% endblock %}
 
   <!-- ── CHATBOT WIDGET ── -->
@@ -395,6 +513,50 @@
   }
   
   document.addEventListener("DOMContentLoaded", initGlobalSearch);
+
+  // Real notifications: drawn from /api/dashboard-summary
+  async function loadNotifications(){
+    const list = document.getElementById('notif-list');
+    if (!list) return;
+    try {
+      const s = await fetch('/api/dashboard-summary').then(r=>r.json());
+      const items = [];
+      const p = s.pipeline || {};
+      if (p.status === 'failed') {
+        items.push({color:'red', icon:'ti-alert-triangle', title:'Pipeline failed', body:(p.error||'see logs').slice(0,80), href:'/'});
+      } else if (p.status === 'running') {
+        items.push({color:'blue', icon:'ti-loader', title:'Pipeline running', body:`Step ${p.step_reached||0}/6`, href:'/'});
+      } else if (p.status === 'complete') {
+        items.push({color:'green', icon:'ti-check', title:'Pipeline complete', body:`Last run: ${p.completed_at?new Date(p.completed_at).toLocaleString():'—'}`, href:'/'});
+      }
+      if ((s.urgent_count||0) > 0) {
+        const top = s.top_risk;
+        items.push({color:'red', icon:'ti-alert-triangle', title:`${s.urgent_count} stockout risk SKU(s)`,
+          body: top ? `${top.sku_id} — ${top.weeks_of_stock.toFixed(1)}w stock` : '', href:'/reorder'});
+      }
+      const acc = s.accuracy || {};
+      if ((acc.overall_mape||0) > 25) {
+        items.push({color:'yellow', icon:'ti-target', title:'Forecast accuracy degraded',
+          body:`MAPE ${acc.overall_mape.toFixed(1)}% — review`, href:'/accuracy'});
+      }
+      const dot = document.getElementById('notif-dot');
+      if (dot) dot.style.display = items.length ? 'block' : 'none';
+      if (!items.length) {
+        list.innerHTML = '<div class="list-group-item text-muted text-center py-3" style="font-size:12px"><i class="ti ti-check me-1"></i>All clear</div>';
+        return;
+      }
+      list.innerHTML = items.map(i => `
+        <a href="${i.href}" class="list-group-item list-group-item-action py-3">
+          <div class="d-flex align-items-center">
+            <div class="avatar bg-${i.color}-lt me-3"><i class="ti ${i.icon} text-${i.color}"></i></div>
+            <div style="flex:1;min-width:0"><strong class="d-block text-${i.color}">${i.title}</strong><span class="text-muted text-truncate d-block">${i.body}</span></div>
+          </div>
+        </a>`).join('');
+    } catch (e) {
+      list.innerHTML = '<div class="list-group-item text-muted text-center py-3" style="font-size:12px">Could not load notifications.</div>';
+    }
+  }
+  document.addEventListener('DOMContentLoaded', loadNotifications);
   </script>
 </body>
 </html>

@@ -9,10 +9,12 @@
       <div class="text-white small fw-bold text-uppercase mb-1" style="letter-spacing:0.06em;opacity:0.7">System-Wide Forecast Accuracy</div>
       <div class="display-6" id="hero-mape" style="font-size:2rem">--</div>
       <div style="color:rgba(255,255,255,0.6)" id="hero-subtitle">Loading accuracy data...</div>
+      <div style="color:rgba(255,255,255,0.5);font-size:11px;margin-top:4px" id="hero-source"></div>
     </div>
     <div class="text-end">
       <div id="hero-badge" class="mb-2"></div>
       <div style="color:rgba(255,255,255,0.6);font-size:13px" id="hero-models">--</div>
+      <div id="retrain-flag" class="mt-1"></div>
     </div>
   </div>
 </div>
@@ -72,19 +74,32 @@
 {% block scripts %}
 <script>
 async function loadAccuracy(){
-  const r=await fetch('/api/forecast-accuracy');const d=await r.json();
-  const skuList=await(await fetch('/api/sku-list')).json();const skuNames={};skuList.forEach(s=>skuNames[s.sku_id]=s.product_name);
-  const mape=d.overall_mape||0;
-  document.getElementById('hero-mape').textContent=mape.toFixed(1)+'% avg error';
-  const trustLevel=mape<10?'EXCELLENT':mape<15?'GOOD':mape<20?'FAIR':'NEEDS ATTENTION';
-  const trustColor=mape<10?'#2fb344':mape<15?'#206bc4':mape<20?'#f59f00':'#d63939';
-  document.getElementById('hero-badge').innerHTML=`<span class="badge" style="background:${trustColor};font-size:14px;padding:6px 16px">${trustLevel}</span>`;
-  document.getElementById('hero-subtitle').textContent=`${d.total_skus_forecasted||0} SKUs forecasted • ${d.low_confidence_skus?.length||0} need attention`;
-  document.getElementById('hero-models').textContent=`${d.lgbm_count||0} LightGBM • ${d.rolling_avg_count||0} Rolling Avg`;
-  document.getElementById('kpi-lgbm').textContent=d.lgbm_count||0;
-  document.getElementById('kpi-rolling').textContent=d.rolling_avg_count||0;
-  document.getElementById('kpi-lowconf').textContent=d.low_confidence_skus?.length||0;
-  document.getElementById('kpi-total-fc').textContent=d.total_skus_forecasted||0;
+  let d;
+  try { d = await (await fetch('/api/forecast-accuracy')).json(); } catch(e){ d = {}; }
+  const skuList = await (await fetch('/api/sku-list')).json().catch(()=>[]);
+  const skuNames = {}; skuList.forEach(s => skuNames[s.sku_id] = s.product_name);
+
+  const mape = d.overall_mape || d.overall_mape_pct || 0;
+  const totalSkus = d.total_skus_forecasted || Object.keys(d.per_sku_mape || {}).length;
+
+  document.getElementById('hero-mape').textContent = mape.toFixed(1) + '% avg error';
+  const trustLevel = mape<10?'EXCELLENT':mape<15?'GOOD':mape<20?'FAIR':'NEEDS ATTENTION';
+  const trustColor = mape<10?'#2fb344':mape<15?'#206bc4':mape<20?'#f59f00':'#d63939';
+  document.getElementById('hero-badge').innerHTML = `<span class="badge" style="background:${trustColor};font-size:14px;padding:6px 16px">${trustLevel}</span>`;
+  document.getElementById('hero-subtitle').textContent = `${totalSkus} SKUs forecasted · ${(d.low_confidence_skus||[]).length} need attention`;
+  document.getElementById('hero-models').textContent = `${d.lgbm_count||0} LightGBM · ${d.rolling_avg_count||0} Rolling Avg`;
+  // Source (database/test_set/empty) tells the user whether they're seeing rolling MAPE or test-set MAPE
+  const sourceLabel = d.source === 'database' ? `Rolling 4-week MAPE · ${d.total_weeks_logged||0} actuals logged`
+                    : d.source === 'test_set_fallback' ? 'Test-set MAPE (no actuals logged yet)'
+                    : 'Test-set MAPE';
+  document.getElementById('hero-source').textContent = sourceLabel;
+  if (d.needs_retrain) {
+    document.getElementById('retrain-flag').innerHTML = '<span class="badge bg-red"><i class="ti ti-refresh me-1"></i>Retrain recommended</span>';
+  }
+  document.getElementById('kpi-lgbm').textContent = d.lgbm_count || 0;
+  document.getElementById('kpi-rolling').textContent = d.rolling_avg_count || 0;
+  document.getElementById('kpi-lowconf').textContent = (d.low_confidence_skus || []).length;
+  document.getElementById('kpi-total-fc').textContent = totalSkus;
 
   const perSku=d.per_sku_mape||{};const skuArr=Object.entries(perSku).map(([id,info])=>({id,...info,name:skuNames[id]||id}));const sorted=skuArr.sort((a,b)=>a.mape-b.mape);
 

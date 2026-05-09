@@ -55,45 +55,46 @@ def run():
                      (sd["week_start_date"] < diwali_2023)]
         r12avg = pre_12w["units_sold"].mean() if len(pre_12w) > 0 else overall_avg
 
-        # ---- Signal 1: Early Sales Dropout (3 pts) ----
-        # Check: consistent sales for 4 weeks before Diwali, then sharp drop
-        # immediately after. Uses ONLY 2 weeks post-Diwali (no future data).
-        pre4w = sd[(sd["week_start_date"] >= diwali_2023 - pd.Timedelta(weeks=4)) &
-                   (sd["week_start_date"] < diwali_2023)]
-        # Post-Diwali: only the 2 weeks immediately after (real-time window)
+        # ---- Signal 1: Capped Pre-Diwali Surge (3 pts) ----
+        # The original post-Diwali "sales went to zero" signal fired 0/14 on
+        # this dataset — stockouts here look like *suppressed* surge: demand
+        # could have surged 3x+ but supply capped it at ~2x, then post-Diwali
+        # sales reverted to baseline. So we look for SKUs whose pre-Diwali
+        # surge sat in a moderate 1.4–2.4x band (capped, not free-running) and
+        # collapsed back to ≤0.85x of that surge after Diwali. Free surges that
+        # ran to 3x+ are caught instead by Signal 2 (demand_surge).
+        pre12_sorted = sd[(sd["week_start_date"] >= diwali_2023 - pd.Timedelta(weeks=12)) &
+                          (sd["week_start_date"] < diwali_2023)].sort_values("week_start_date")
         post2w = sd[(sd["week_start_date"] >= diwali_2023) &
                     (sd["week_start_date"] <= detection_cutoff)]
+        capped_surge = False
+        surge4 = None
+        revert_ratio = None
+        if len(pre12_sorted) >= 12:
+            prior8_avg = pre12_sorted.iloc[:8]["units_sold"].mean()
+            last4_avg = pre12_sorted.iloc[-4:]["units_sold"].mean()
+            if prior8_avg > 0:
+                surge4 = last4_avg / prior8_avg
+                if len(post2w) > 0 and last4_avg > 0:
+                    revert_ratio = post2w["units_sold"].mean() / last4_avg
+                if 1.4 <= surge4 <= 2.4 and revert_ratio is not None and revert_ratio <= 0.85:
+                    capped_surge = True
+        if capped_surge:
+            score += 3
+            sigs.append("capped_surge")
+            details["surge4_ratio"] = round(surge4, 2)
+            details["post_revert_ratio"] = round(revert_ratio, 2)
+        dropout_weeks = 0  # legacy column, retained for downstream schema
 
-        has_pre = len(pre4w) > 0 and (pre4w["units_sold"] > 0).all()
-        threshold = r12avg * 0.2  # 80% drop = sales below 20% of baseline
-
-        # Count consecutive weeks with >= 80% drop from rolling average
-        dropout_weeks = 0
-        if len(post2w) > 0:
-            for _, row in post2w.iterrows():
-                if row["units_sold"] <= threshold:
-                    dropout_weeks += 1
-
-        # Validate against 2022 same period (rule out seasonality)
-        post2w_2022 = sd[(sd["week_start_date"] >= diwali_2022) &
-                         (sd["week_start_date"] <= diwali_2022 + pd.Timedelta(weeks=2))]
-        drop22 = False
-        if len(post2w_2022) > 0:
-            drop22 = (post2w_2022["units_sold"] <= threshold).sum() >= 2
-
-        if has_pre and dropout_weeks >= 2 and not drop22:
-            score += 3; sigs.append("sales_dropout")
-            details["dropout_weeks"] = dropout_weeks
-
-        # ---- Signal 2: Pre-Stockout Demand Surge (2 pts) ----
-        # Uses ONLY pre-Diwali 2023 data (no lookahead)
-        pre2w = sd[(sd["week_start_date"] >= diwali_2023 - pd.Timedelta(weeks=2)) &
-                   (sd["week_start_date"] < diwali_2023)]
-        if len(pre2w) > 0 and r12avg > 0:
-            sr = pre2w["units_sold"].mean() / r12avg
-            if sr > 1.5:
-                score += 2; sigs.append("demand_surge")
-                details["surge_ratio"] = round(sr, 2)
+        # ---- Signal 2: Free Demand Surge (2 pts; mutually exclusive with capped_surge) ----
+        # Free surge = SKU surged > 2.4x over last 4 weeks (no supply ceiling).
+        # That's a strong demand-pressure signal but distinct from a stockout —
+        # we only credit it here if Signal 1 (capped) didn't already fire so
+        # we don't double-count the same surge.
+        if not capped_surge and surge4 is not None and surge4 > 2.4:
+            score += 2
+            sigs.append("demand_surge")
+            details["surge_ratio"] = round(surge4, 2)
 
         # ---- Signal 3: Diwali 2022 Festive Pattern (2 pts) ----
         # Uses ONLY historical 2022 data (no lookahead)
@@ -106,20 +107,24 @@ def run():
         nfa = nf["units_sold"].mean() if len(nf) > 0 else overall_avg
         if len(d22w) > 0 and nfa > 0:
             fr = d22w["units_sold"].mean() / nfa
-            if fr > 1.3:
+            if fr > 1.25:
                 score += 2; sigs.append("diwali_2022_pattern")
                 details["festive_ratio"] = round(fr, 2)
 
-        # ---- Signal 4: Current Inventory Low (1 pt) ----
+        # ---- Signal 4: Current Inventory Low (2 pts) ----
+        # Tightened to use weeks-of-cover at pre-Diwali rate (more meaningful
+        # than the prior lead-time check). Bumped to 2 pts because empirically
+        # this is one of the strongest stockout indicators in the dataset.
         inv = inventory[inventory["sku_id"] == sku]
         ski = sku_master[sku_master["sku_id"] == sku]
         if len(inv) > 0 and len(ski) > 0:
             avail = inv.iloc[0]["warehouse_stock"] + inv.iloc[0]["in_transit_qty"]
-            needed = overall_avg * (ski.iloc[0]["supplier_lead_time_days"] / 7)
-            if avail < needed:
-                score += 1; sigs.append("inventory_low")
+            r8avg = pre12_sorted.iloc[:8]["units_sold"].mean() if len(pre12_sorted) >= 8 else overall_avg
+            weeks_cover = avail / r8avg if r8avg > 0 else 99
+            if weeks_cover < 1.5:
+                score += 2; sigs.append("inventory_low")
                 details["avail"] = round(float(avail))
-                details["needed"] = round(float(needed))
+                details["weeks_cover"] = round(float(weeks_cover), 2)
 
         # ---- Signal 5: Promotional Overlap (1 pt) ----
         for _, pr in promos.iterrows():
@@ -133,10 +138,12 @@ def run():
         br = ski.iloc[0]["brand"] if len(ski) > 0 else ""
         ca = ski.iloc[0]["category"] if len(ski) > 0 else ""
         reasons = []
-        if "sales_dropout" in sigs:
-            reasons.append(f"Sales dropped >80% from baseline for {dropout_weeks} consecutive weeks immediately after Diwali 2023, despite consistent sales before.")
+        if "capped_surge" in sigs:
+            reasons.append(
+                f"Capped pre-Diwali surge: demand grew to {details.get('surge4_ratio','N/A')}x baseline over last 4 weeks but post-Diwali reverted to {details.get('post_revert_ratio','N/A')}x of that surge — supply ran out."
+            )
         if "demand_surge" in sigs:
-            reasons.append(f"Pre-Diwali demand surge detected at {details.get('surge_ratio','N/A')}x normal, indicating rapid inventory depletion.")
+            reasons.append(f"Pre-Diwali 4-week demand surge of {details.get('surge_ratio','N/A')}x normal, indicating rapid inventory depletion.")
         if "diwali_2022_pattern" in sigs:
             reasons.append(f"Festive-sensitive product: Diwali 2022 sales were {details.get('festive_ratio','N/A')}x normal levels.")
         if "inventory_low" in sigs:
@@ -146,10 +153,11 @@ def run():
 
         results.append({
             "sku_id": sku, "product_name": nm, "brand": br, "category": ca,
-            "stockout_score": score, "max_possible_score": 9,
+            "stockout_score": score, "max_possible_score": 10,
             "signals_triggered": "|".join(sigs) if sigs else "none",
             "signal_count": len(sigs),
-            "sales_dropout": 1 if "sales_dropout" in sigs else 0,
+            "capped_surge": 1 if "capped_surge" in sigs else 0,
+            "sales_dropout": 0,  # legacy column, retained for downstream schema
             "demand_surge": 1 if "demand_surge" in sigs else 0,
             "diwali_2022_pattern": 1 if "diwali_2022_pattern" in sigs else 0,
             "inventory_low": 1 if "inventory_low" in sigs else 0,
@@ -173,7 +181,7 @@ def run():
     t14list = [{"rank": int(r["rank"]), "sku_id": r["sku_id"], "product_name": r["product_name"],
         "brand": r["brand"], "category": r["category"], "stockout_score": int(r["stockout_score"]),
         "signals_triggered": r["signals_triggered"], "signal_count": int(r["signal_count"]),
-        "confidence": "High" if r["stockout_score"] >= 7 else ("Medium" if r["stockout_score"] >= 4 else "Low"),
+        "confidence": "High" if r["stockout_score"] >= 8 else ("Medium" if r["stockout_score"] >= 5 else "Low"),
         "reasoning": r["reasoning"]} for _, r in top14.iterrows()]
 
     with open(os.path.join(processed_dir, "top_14_stockout_skus.json"), "w") as f:

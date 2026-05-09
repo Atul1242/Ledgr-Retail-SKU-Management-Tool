@@ -19,14 +19,24 @@
 {% block scripts %}
 <script>
 async function loadClassification(){
-  const data=await(await fetch('/api/sku-classification')).json();
+  let data;
+  try { data = await (await fetch('/api/sku-classification')).json(); } catch(e){ data = []; }
+  if (!Array.isArray(data) || !data.length) {
+    document.querySelectorAll('.kpi-value').forEach(el => el.textContent = '—');
+    document.getElementById('chart-top20').innerHTML = '<div style="text-align:center;padding:40px;color:#94A3B8"><i class="ti ti-chart-bar" style="font-size:32px;display:block;margin-bottom:8px"></i>No classification data yet. Run the pipeline to populate.</div>';
+    document.getElementById('chart-scatter').innerHTML = document.getElementById('chart-top20').innerHTML;
+    return;
+  }
   const groups={fast_mover:[],slow_mover:[],seasonal:[],dead_stock:[]};
   data.forEach(s=>{if(groups[s.movement_class])groups[s.movement_class].push(s);});
   ['fast','slow','seasonal','dead'].forEach((k,i)=>{
     const key=['fast_mover','slow_mover','seasonal','dead_stock'][i];
     const g=groups[key]||[];
     document.getElementById('cls-'+k).textContent=g.length;
-    document.getElementById('cls-'+k+'-list').innerHTML=g.slice(0,4).map(s=>'<i class="ti ti-point-filled" style="font-size:10px"></i> '+s.product_name).join('<br>');
+    const list = g.slice(0,4).map(s=>'<i class="ti ti-point-filled" style="font-size:10px"></i> <a href="/sku-performance?sku='+s.sku_id+'" style="color:inherit;text-decoration:none">'+(s.product_name||'').substring(0,28)+'</a>').join('<br>');
+    const more = g.length > 4 ? `<div style="margin-top:4px;font-size:11px;color:#94A3B8">+${g.length-4} more</div>` : '';
+    document.getElementById('cls-'+k+'-list').innerHTML = list || '<div style="color:#94A3B8;font-size:11px">— none —</div>';
+    document.getElementById('cls-'+k+'-list').innerHTML += more;
   });
   const sorted=[...data].sort((a,b)=>b.avg_weekly_sales-a.avg_weekly_sales);
   const top20=sorted.slice(0,20);

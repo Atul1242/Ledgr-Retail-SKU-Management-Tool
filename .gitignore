@@ -1,15 +1,43 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
-.env
-venv/
 *.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Local Python env / build
+venv/
+.venv/
 dist/
 build/
-data/processed/
-logs/
-docs/
+
+# Local secrets and runtime state
+.env
+.env.local
+sunrise.db
 *.log
+data/processed/
+data/uploads/
+data/*.bak
+logs/
+
+# Auto-generated docs
+docs/
+
+# Source-of-truth assets live in static/images/ — keep root clean
+/ledgr brand.png
+/logo.png
+
+# Android build artifacts
+android/.gradle/
+android/build/
+android/app/build/
+android/app/release/
+android/captures/
+android/local.properties
+android/.kotlin/
+
+# OS
 .DS_Store
 Thumbs.db
-sunrise.db

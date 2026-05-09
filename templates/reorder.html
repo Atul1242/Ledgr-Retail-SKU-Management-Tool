@@ -18,7 +18,7 @@
     <div class="df-search" style="flex:0 0 auto"><i class="ti ti-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9CA3AF;font-size:14px"></i><input type="text" placeholder="Search SKUs..." id="order-search" style="width:200px;height:34px;padding-left:32px;border:1px solid #D1D5DB;border-radius:6px;font-size:12px;outline:none" oninput="filterOrders()"></div>
     <button class="df-btn-outline" onclick="selectAll()"><i class="ti ti-checks"></i>Select All</button>
     <div style="flex:1"></div>
-    <button class="btn btn-primary" style="font-size:13px;padding:7px 18px;border-radius:6px" id="approve-btn" onclick="approveSelected()">
+    <button class="btn btn-primary" style="font-size:13px;padding:7px 18px;border-radius:6px" id="approve-btn" data-roles="owner" onclick="approveSelected()">
       <i class="ti ti-check me-1"></i>Approve Selected (<span id="approve-total">₹0</span>)
     </button>
   </div>
@@ -105,7 +105,7 @@
 {% block scripts %}
 <script>
 let allOrders=[],selectedIds=new Set(),panelChart=null,currentTab='pending';
-const vendors=['Supplier A','Supplier B','Supplier C','Parle Dist.','HUL Direct','ITC Warehouse'];
+let skuSupplierMap = {};
 
 // ── Tab Switching ──
 function switchTab(el,tab){
@@ -121,8 +121,20 @@ function switchTab(el,tab){
 
 // ═══ PENDING APPROVAL ═══
 async function loadOrders(){
-  const data=await(await fetch('/api/reorder-recommendations')).json();
-  allOrders=data.map((r,i)=>({...r,vendor:vendors[i%vendors.length],checked:false,adjusted_qty:r.final_reorder_qty||0}));
+  // Load SKU master in parallel so we can use real supplier_name from DB
+  // (the previous version assigned random vendors by index — now removed).
+  const [data, fullSkus] = await Promise.all([
+    fetch('/api/reorder-recommendations').then(r=>r.json()),
+    fetch('/api/sku-list-full').then(r=>r.json()).catch(()=>[]),
+  ]);
+  skuSupplierMap = {};
+  (fullSkus || []).forEach(s => { skuSupplierMap[s.sku_id] = s.supplier_name || ''; });
+  allOrders = data.map(r => ({
+    ...r,
+    vendor: skuSupplierMap[r.sku_id] || '—',
+    checked: false,
+    adjusted_qty: r.final_reorder_qty || 0
+  }));
   renderOrders(allOrders);
 }
 
@@ -140,13 +152,13 @@ function renderOrders(data){
     }).join(' ');
     const checked=selectedIds.has(r.sku_id)?'checked':'';
     const sel=selectedIds.has(r.sku_id)?'selected':'';
-    const cost=r.cost_price||20;
+    const cost=Number(r.cost_price)||0;
     const total=(r.adjusted_qty||r.final_reorder_qty||0)*cost;
     return`<tr class="${sel}" onclick="selectRow('${r.sku_id}',this)" data-sku="${r.sku_id}">
       <td onclick="event.stopPropagation()"><input type="checkbox" ${checked} onchange="toggleCheck('${r.sku_id}',this)"></td>
       <td style="font-weight:600">${r.sku_id}</td>
-      <td><div style="display:flex;align-items:center;gap:8px"><div style="width:40px;height:40px;background:#F8FAFC;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #E2E8F0;flex-shrink:0"><img src="/static/images/products/${r.sku_id}.png" alt="${r.product_name||''}" style="width:36px;height:36px;object-fit:contain" onerror="this.style.display='none';this.parentElement.innerHTML='<i class=\\'ti ti-package\\' style=\\'font-size:14px;color:#94A3B8\\'></i>'"></div><span style="font-size:13px">${r.product_name||''}</span></div></td>
-      <td>${r.forecast_6w_total||0}w</td>
+      <td><div style="display:flex;align-items:center;gap:8px">${window.productIconHTML(r, 40)}<span style="font-size:13px">${r.product_name||''}</span></div></td>
+      <td>${r.forecast_6w_total||0}</td>
       <td>${r.final_reorder_qty||0}</td>
       <td>${r.moq||0}</td>
       <td onclick="event.stopPropagation()"><input class="df-editable" type="number" value="${r.adjusted_qty||r.final_reorder_qty||0}" onchange="updateQty('${r.sku_id}',this.value)" min="0"> <i class="ti ti-pencil" style="font-size:12px;color:#94A3B8"></i></td>
@@ -173,21 +185,23 @@ function updateApproveTotal(){
 function filterOrders(){const q=document.getElementById('order-search').value.toLowerCase();renderOrders(allOrders.filter(r=>(r.sku_id+' '+r.product_name).toLowerCase().includes(q)));}
 
 async function approveSelected(){
-  if(selectedIds.size===0){alert('Select orders to approve');return;}
+  if(selectedIds.size===0){window.toast('Select orders to approve','warn');return;}
+  const btn=document.getElementById('approve-btn');btn.disabled=true;
   const items=[];
   selectedIds.forEach(id=>{
     const r=allOrders.find(o=>o.sku_id===id);
-    if(r)items.push({sku_id:r.sku_id,qty:r.adjusted_qty||r.final_reorder_qty||0,cost_price:r.cost_price||20,vendor:r.vendor});
+    if(r)items.push({sku_id:r.sku_id,qty:r.adjusted_qty||r.final_reorder_qty||0,cost_price:Number(r.cost_price)||0,vendor:r.vendor});
   });
   try{
     const res=await fetch('/api/orders/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items})});
     const d=await res.json();
     if(d.status==='success'){
-      alert(`✓ ${d.message}\nPO Numbers: ${(d.po_numbers||[]).join(', ')}`);
+      window.toast(`${d.message} — POs: ${(d.po_numbers||[]).join(', ')||'(none)'}`,'success',5000);
       selectedIds.clear();
       loadOrders();
-    }else{alert('Error: '+(d.message||'Failed'));}
-  }catch(e){alert('Failed to approve orders');}
+    }else{window.toast(d.message||'Approval failed','error');}
+  }catch(e){window.toast('Network error — approval failed','error');}
+  finally{btn.disabled=false;}
 }
 
 // ═══ APPROVED ORDERS ═══
@@ -204,7 +218,7 @@ async function loadApprovedOrders(){
     tbody.innerHTML=data.map(o=>`<tr>
       <td style="font-weight:600;color:#206bc4">${o.po_number}</td>
       <td><strong>${o.sku_id}</strong></td>
-      <td><div style="display:flex;align-items:center;gap:6px"><div style="width:32px;height:32px;background:#F8FAFC;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #E2E8F0"><img src="/static/images/products/${o.sku_id}.png" style="width:28px;height:28px;object-fit:contain" onerror="this.style.display='none';this.parentElement.innerHTML='<i class=\\'ti ti-package\\' style=\\'font-size:12px;color:#94A3B8\\'></i>'"></div>${o.product_name}</div></td>
+      <td><div style="display:flex;align-items:center;gap:6px">${window.productIconHTML({sku_id:o.sku_id, category:o.category}, 32)}${o.product_name}</div></td>
       <td>${o.qty_ordered}</td>
       <td>₹${o.unit_price.toLocaleString('en-IN')}</td>
       <td style="font-weight:600">₹${o.total_value.toLocaleString('en-IN')}</td>
@@ -239,7 +253,7 @@ async function loadTransitOrders(){
       return`<tr>
         <td style="font-weight:600;color:#206bc4">${o.po_number}</td>
         <td><strong>${o.sku_id}</strong></td>
-        <td><div style="display:flex;align-items:center;gap:6px"><div style="width:32px;height:32px;background:#F8FAFC;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #E2E8F0"><img src="/static/images/products/${o.sku_id}.png" style="width:28px;height:28px;object-fit:contain" onerror="this.style.display='none';this.parentElement.innerHTML='<i class=\\'ti ti-package\\' style=\\'font-size:12px;color:#94A3B8\\'></i>'"></div>${o.product_name}</div></td>
+        <td><div style="display:flex;align-items:center;gap:6px">${window.productIconHTML({sku_id:o.sku_id, category:o.category}, 32)}${o.product_name}</div></td>
         <td>${o.qty_ordered}</td>
         <td>${o.supplier_name}</td>
         <td>${o.order_date}</td>
@@ -257,9 +271,9 @@ async function receiveOrder(poNum){
   try{
     const r=await fetch('/api/orders/receive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({po_number:poNum})});
     const d=await r.json();
-    if(d.status==='success'){alert('✓ '+d.message);loadTransitOrders();}
-    else alert('Error: '+d.message);
-  }catch(e){alert('Failed to mark as received');}
+    if(d.status==='success'){window.toast(d.message,'success');loadTransitOrders();}
+    else window.toast(d.message||'Receive failed','error');
+  }catch(e){window.toast('Network error','error');}
 }
 
 // ── Detail Panel ──
@@ -276,13 +290,17 @@ function selectRow(sku,tr){
     <p><strong>MAPE:</strong> ${(r.mape_pct||0).toFixed(1)}%</p>
     <p style="color:#64748B;font-size:12px;margin-top:8px">${r.reason_text||''}</p>`;
   if(panelChart)panelChart.destroy();
-  const labels=['W1','W2','W3','W4','W5','W6'];
-  const actual=[120,130,100,140,110,null];
-  const predicted=[115,128,105,138,115,145];
-  panelChart=new Chart(document.getElementById('panel-chart'),{type:'line',data:{labels,datasets:[
-    {label:'Actual',data:actual,borderColor:'#94A3B8',borderWidth:2,pointRadius:3,tension:0.3},
-    {label:'Predicted',data:predicted,borderColor:'#3B82F6',borderWidth:2,pointRadius:3,tension:0.3}
-  ]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'#E2E8F0'}}}}});
+  // Pull real per-SKU forecast (6w) from /api/forecasts
+  fetch('/api/forecasts?sku='+encodeURIComponent(sku)).then(rr=>rr.json()).then(rows=>{
+    const labels=(rows||[]).map(x=>(x.week_start_date||'').slice(5));
+    const data=(rows||[]).map(x=>x.forecasted_units||0);
+    const lo=(rows||[]).map(x=>x.lower_bound!=null?x.lower_bound:null);
+    const hi=(rows||[]).map(x=>x.upper_bound!=null?x.upper_bound:null);
+    const dsets=[{label:'Forecast',data,borderColor:'#3B82F6',borderWidth:2,pointRadius:3,tension:0.3}];
+    if(hi.length&&hi.some(v=>v!=null))dsets.push({label:'Upper 95% CI',data:hi,borderColor:'#94A3B8',borderWidth:1,pointRadius:0,borderDash:[4,4]});
+    if(lo.length&&lo.some(v=>v!=null))dsets.push({label:'Lower 95% CI',data:lo,borderColor:'#94A3B8',borderWidth:1,pointRadius:0,borderDash:[4,4]});
+    panelChart=new Chart(document.getElementById('panel-chart'),{type:'line',data:{labels,datasets:dsets},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'#E2E8F0'}}}}});
+  });
   document.getElementById('detail-panel').classList.add('open');
   document.querySelector('.df-main')?.classList.add('panel-open');
 }

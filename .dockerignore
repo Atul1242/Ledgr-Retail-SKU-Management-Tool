@@ -1,0 +1,48 @@
+# VCS / IDE
+.git
+.gitignore
+.gitattributes
+.vscode
+.idea
+*.swp
+
+# Python
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+*.egg-info
+
+# Local Python env (image installs its own from requirements.txt)
+venv
+.venv
+
+# Local SQLite (Docker uses Postgres; sunrise.db is dev-only)
+sunrise.db
+
+# Pipeline outputs / logs (regenerated inside the container)
+data/processed
+data/uploads
+logs
+*.log
+
+# Backups
+*.bak
+
+# Local secrets (compose passes env from compose itself or host .env)
+.env
+.env.local
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Docs / artifacts not needed at runtime
+*.md.bak
+
+# Original brand asset files (live copies are in static/images/)
+ledgr brand.png
+logo.png

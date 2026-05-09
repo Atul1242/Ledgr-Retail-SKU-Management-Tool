@@ -1,123 +1,136 @@
 {% extends "base.html" %}
-{% block title %}Reports{% endblock %}
+{% block title %}Diwali Retrospective{% endblock %}
 {% block content %}
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-  <h2 style="margin:0;font-size:22px;font-weight:700">Performance Reports Dashboard</h2>
+  <h2 style="margin:0;font-size:22px;font-weight:700">Diwali 2023 Retrospective Detection</h2>
+  <span class="text-muted" id="retro-meta" style="font-size:12px">—</span>
 </div>
 
-<!-- Report Config Card -->
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
-  <div class="df-card">
-    <div class="df-card-header"><div class="df-card-title"><i class="ti ti-file-analytics" style="color:#3B82F6"></i>Report Configuration</div></div>
-    <div class="df-card-body">
-      <div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">
-        <div style="flex:1;min-width:180px">
-          <label style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;margin-bottom:4px;display:block">Report Type</label>
-          <select class="df-btn-outline" style="width:100%;padding:8px 12px;cursor:pointer">
-            <option>Monday Morning Executive Summary</option><option>Weekly SKU Performance</option><option>Monthly Supplier Review</option>
-          </select>
-        </div>
-        <div style="flex:1;min-width:180px">
-          <label style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;margin-bottom:4px;display:block">Date Range</label>
-          <select class="df-btn-outline" style="width:100%;padding:8px 12px;cursor:pointer">
-            <option>Week 45: Nov 01 – Nov 07, 2026</option><option>Week 44: Oct 25 – Oct 31, 2026</option><option>Week 43: Oct 18 – Oct 24, 2026</option>
-          </select>
-        </div>
-        <button class="btn btn-primary" style="font-size:13px;padding:8px 18px;border-radius:6px;white-space:nowrap"><i class="ti ti-brand-whatsapp me-1"></i>Generate and WhatsApp Report</button>
-      </div>
-    </div>
+<!-- Top KPI strip -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px" id="retro-kpis"></div>
+
+<!-- Predicted top-14 table -->
+<div class="df-card" style="margin-bottom:16px">
+  <div class="df-card-header">
+    <div class="df-card-title"><i class="ti ti-history" style="color:#3B82F6"></i>Top Predicted Stockout SKUs (real-time, no lookahead bias)</div>
+    <span class="text-muted" style="font-size:11px" id="cutoff-label"></span>
   </div>
-  <div class="df-card">
-    <div class="df-card-header"><div class="df-card-title"><i class="ti ti-calendar-event" style="color:#3B82F6"></i>Scheduled Reports</div></div>
-    <div class="df-card-body">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div>
-          <div style="font-size:14px;font-weight:600">Monday 08:00 AM IST auto-trigger</div>
-          <div style="font-size:12px;color:#64748B;margin-top:2px">Pipeline: clean → forecast → retro → reorder → classify → report</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <span class="df-flag df-flag-ok">ACTIVE</span>
-          <button class="df-btn-outline" style="padding:5px 12px"><i class="ti ti-refresh"></i> Retrain</button>
-        </div>
-      </div>
-    </div>
+  <div style="overflow-x:auto">
+    <table class="df-table" id="retro-table">
+      <thead><tr>
+        <th>Rank</th><th>SKU</th><th>Product</th><th>Score</th>
+        <th>Capped Surge</th><th>Demand Surge</th><th>Diwali 2022 Pattern</th><th>Inventory Low</th><th>Promo Overlap</th>
+        <th>Match?</th>
+      </tr></thead>
+      <tbody id="retro-tbody"><tr><td colspan="10" class="loading-pulse" style="text-align:center;padding:24px">Loading...</td></tr></tbody>
+    </table>
   </div>
 </div>
 
-<!-- Week 45 Performance: 4 metric cards -->
-<div style="font-size:15px;font-weight:600;margin-bottom:12px">Week 45 Performance</div>
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px">
-  <!-- 1: Revenue vs Forecast -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
   <div class="df-card">
-    <div class="df-card-header" style="padding:12px 16px"><div class="df-card-title" style="font-size:12px">Revenue vs Forecast</div></div>
-    <div class="df-card-body" style="padding:12px"><canvas id="chart-revenue" height="140"></canvas></div>
-  </div>
-  <!-- 2: Stockout Impact -->
-  <div class="df-card">
-    <div class="df-card-header" style="padding:12px 16px"><div class="df-card-title" style="font-size:12px">Stockout Impact</div></div>
-    <div class="df-card-body" style="padding:12px"><canvas id="chart-stockout" height="140"></canvas></div>
-  </div>
-  <!-- 3: Capital Trapped -->
-  <div class="df-card">
-    <div class="df-card-header" style="padding:12px 16px"><div class="df-card-title" style="font-size:12px">Capital Trapped</div></div>
-    <div class="df-card-body" style="padding:10px">
-      <div id="capital-list" style="font-size:12px"></div>
-      <div style="background:#FEFCE8;border-radius:6px;padding:8px 12px;margin-top:10px;text-align:center">
-        <span style="font-size:11px;color:#A16207;font-weight:600">Total Dead Capital</span>
-        <div style="font-size:18px;font-weight:700;color:#A16207" id="dead-capital">₹45K</div>
-      </div>
+    <div class="df-card-header"><div class="df-card-title">Detection Accuracy</div></div>
+    <div class="df-card-body" style="padding:14px">
+      <div id="accuracy-card"></div>
     </div>
   </div>
-  <!-- 4: Forecast Accuracy -->
   <div class="df-card">
-    <div class="df-card-header" style="padding:12px 16px"><div class="df-card-title" style="font-size:12px">Forecast Accuracy</div></div>
-    <div class="df-card-body" style="padding:12px;text-align:center;position:relative">
-      <div style="position:relative;width:100px;height:100px;margin:0 auto">
-        <canvas id="chart-accuracy" height="100"></canvas>
-        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:18px;font-weight:700;color:#22C55E">83.5%</div>
-      </div>
-      <div style="font-size:20px;font-weight:700;margin-top:8px">MAPE: <span id="rpt-mape">16.5%</span></div>
-      <span class="df-flag df-flag-ok" style="margin-top:4px">ML Confidence: GOOD</span>
+    <div class="df-card-header"><div class="df-card-title">Reasoning (Top 5)</div></div>
+    <div class="df-card-body" style="padding:14px">
+      <div id="reasoning-list" style="font-size:12px;line-height:1.7"></div>
     </div>
   </div>
 </div>
-
-<!-- Right Panel: RAG notes -->
-<aside class="df-right-panel open" id="rag-panel">
-  <div class="df-right-panel-header">
-    <h4>RAG Executive Notes</h4>
-    <button class="df-right-panel-close" onclick="document.getElementById('rag-panel').classList.remove('open');document.querySelector('.df-main').classList.remove('panel-open')"><i class="ti ti-x"></i></button>
-  </div>
-  <div class="df-right-panel-body" style="font-size:13px;line-height:1.7;color:#475569">
-    <p><strong style="color:#1E293B">Week 45 Executive Summary:</strong> Overall demand tracked 94.2% to forecast. Three festive SKUs (SKU-011, SKU-012, SKU-014) showed 18–25% higher demand than predicted, indicating the Diwali pre-ramp started earlier than historical patterns suggested.</p>
-    <p style="margin-top:12px"><strong style="color:#1E293B">Action Required:</strong> Recommend increasing safety stock multiplier for all festive-flagged SKUs by 1.5× for weeks 46–48. SKU-012 (Haldiram's Namkeen) is at critical stockout risk — order immediately via expedited channel. Two dead stock SKUs (SKU-078, SKU-091) should be evaluated for clearance markdown.</p>
-    <p style="margin-top:12px;font-size:11px;color:#94A3B8"><i class="ti ti-brain me-1"></i>Generated by LightGBM v3.1 + RAG pipeline</p>
-  </div>
-</aside>
 {% endblock %}
 
 {% block scripts %}
 <script>
-document.querySelector('.df-main').classList.add('panel-open');
+function kpi(label, value, sub, color){
+  return `<div class="df-card"><div class="df-card-body" style="padding:14px">
+    <div class="df-kpi-label">${label}</div>
+    <div class="df-kpi-value" style="font-size:22px;color:${color||'#1E293B'}">${value}</div>
+    <div style="font-size:11px;color:#94A3B8">${sub||''}</div>
+  </div></div>`;
+}
 
-// Revenue vs Forecast
-new Chart(document.getElementById('chart-revenue'),{type:'line',data:{labels:['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],datasets:[
-  {label:'Actual',data:[42,48,38,52,45,62,55],borderColor:'#2563EB',borderWidth:2,tension:0.4,pointRadius:2,fill:false},
-  {label:'Forecasted',data:[40,45,42,48,50,58,52],borderColor:'#93C5FD',borderWidth:2,tension:0.4,pointRadius:2,borderDash:[4,4],fill:false}
-]},options:{responsive:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}},scales:{x:{grid:{display:false},ticks:{font:{size:9}}},y:{min:30,max:70,grid:{color:'#E2E8F0'},ticks:{font:{size:9},callback:v=>v+'k'}}}}});
+async function loadRetro(){
+  const [top14, all] = await Promise.all([
+    fetch('/api/top14').then(r=>r.json()),
+    fetch('/api/stockout-analysis').then(r=>r.json())
+  ]);
 
-// Stockout Impact
-new Chart(document.getElementById('chart-stockout'),{type:'bar',data:{labels:['SKU-012','SKU-011','SKU-014','SKU-023','SKU-031'],datasets:[{data:[45,28,22,15,8],backgroundColor:'#EF4444',borderRadius:4}]},options:{responsive:true,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:{color:'#E2E8F0'},ticks:{font:{size:9},callback:v=>'₹'+v+'k'}},y:{grid:{display:false},ticks:{font:{size:10}}}}}});
+  const acc = (top14 || {}).accuracy || {};
+  const knownCount = acc.known_stockout_count || 14;
+  const correct = acc.correctly_identified || 0;
+  const missed = acc.missed_skus || [];
+  const fp = acc.false_positives || [];
 
-// Capital Trapped list
-const capSkus=[{sku:'SKU-078',val:18},{sku:'SKU-091',val:12},{sku:'SKU-045',val:8},{sku:'SKU-067',val:4},{sku:'SKU-032',val:3}];
-document.getElementById('capital-list').innerHTML=capSkus.map(c=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="font-weight:500;width:60px">${c.sku}</span><div style="flex:1;background:#E2E8F0;border-radius:3px;height:8px"><div style="width:${c.val/18*100}%;background:#3B82F6;border-radius:3px;height:100%"></div></div><span style="font-size:10px;color:#64748B">₹${c.val}k</span></div>`).join('');
-document.getElementById('dead-capital').textContent='₹'+capSkus.reduce((a,c)=>a+c.val,0)+'K';
+  document.getElementById('retro-kpis').innerHTML = [
+    kpi('Correctly identified', `${correct}/${knownCount}`, ((correct/knownCount)*100).toFixed(0)+'% recall', correct >= 10 ? '#22C55E' : correct >= 7 ? '#F59E0B' : '#EF4444'),
+    kpi('Missed', missed.length, missed.slice(0,4).join(', '), missed.length ? '#EF4444' : '#22C55E'),
+    kpi('False positives', fp.length, fp.slice(0,4).join(', '), fp.length ? '#F59E0B' : '#22C55E'),
+    kpi('Detection cutoff', '2 weeks post-Diwali', 'No lookahead bias', '#3B82F6'),
+  ].join('');
 
-// Accuracy donut
-new Chart(document.getElementById('chart-accuracy'),{type:'doughnut',data:{labels:['Accurate','Error'],datasets:[{data:[83.5,16.5],backgroundColor:['#22C55E','#EF4444'],borderWidth:0}]},options:{responsive:true,cutout:'70%',plugins:{legend:{display:false}}}});
+  document.getElementById('cutoff-label').textContent = 'Cutoff: Nov 7, 2023';
 
-// Load real MAPE if available
-fetch('/api/forecast-accuracy').then(r=>r.json()).then(d=>{if(d.overall_mape_pct)document.getElementById('rpt-mape').textContent=d.overall_mape_pct.toFixed(1)+'%';}).catch(()=>{});
+  const skus = (top14 || {}).predicted_stockout_skus || [];
+  if (!skus.length) {
+    document.getElementById('retro-tbody').innerHTML =
+      '<tr><td colspan="10" style="text-align:center;padding:24px;color:#94A3B8">Run pipeline to populate retrospective.</td></tr>';
+    return;
+  }
+  const knownSet = new Set([...Array(knownCount)].map((_,i)=>`SKU-${String(i+1).padStart(3,'0')}`));
+  // join with all-SKU details for signal columns
+  const byId = {};
+  (Array.isArray(all) ? all : []).forEach(r => { byId[r.sku_id] = r; });
+
+  document.getElementById('retro-tbody').innerHTML = skus.map(s => {
+    const d = byId[s.sku_id] || {};
+    const signal = (k, v) => `<span class="df-flag ${v ? 'df-flag-stockout' : ''}" style="${v ? '' : 'background:#F1F5F9;color:#94A3B8'}">${v ? '✓' : '—'}</span>`;
+    const isKnown = knownSet.has(s.sku_id);
+    const matchBadge = isKnown
+      ? '<span class="df-flag df-flag-ok">★ Match</span>'
+      : '<span class="df-flag" style="background:#F1F5F9;color:#94A3B8">—</span>';
+    return `<tr>
+      <td style="font-weight:600">#${s.rank}</td>
+      <td style="font-weight:600;color:#3B82F6">${s.sku_id}</td>
+      <td>${s.product_name||''}</td>
+      <td style="font-weight:600">${s.stockout_score}/${(top14.predicted_stockout_skus[0]?.stockout_score||0) > 9 ? 10 : 9}</td>
+      <td>${signal('capped_surge', d.capped_surge)}</td>
+      <td>${signal('demand_surge', d.demand_surge)}</td>
+      <td>${signal('diwali_2022_pattern', d.diwali_2022_pattern)}</td>
+      <td>${signal('inventory_low', d.inventory_low)}</td>
+      <td>${signal('promo_overlap', d.promo_overlap)}</td>
+      <td>${matchBadge}</td>
+    </tr>`;
+  }).join('');
+
+  // Accuracy donut
+  document.getElementById('accuracy-card').innerHTML = `
+    <div style="text-align:center;font-size:14px;font-weight:600;margin-bottom:6px">${correct} of ${knownCount} known stockouts identified</div>
+    <div id="acc-donut" style="height:180px"></div>
+    <div style="margin-top:8px;font-size:11px;color:#94A3B8;text-align:center">Recall = correctly identified / known stockouts</div>
+  `;
+  new ApexCharts(document.getElementById('acc-donut'), {
+    chart:{type:'donut', height:180},
+    series:[correct, missed.length, fp.length],
+    labels:['Correct', 'Missed', 'False positives'],
+    colors:['#22C55E', '#EF4444', '#F59E0B'],
+    plotOptions:{pie:{donut:{size:'62%', labels:{show:true, total:{show:true, label:'Decisions'}}}}},
+    legend:{position:'bottom', fontSize:'11px'},
+    dataLabels:{enabled:false}, stroke:{width:2, colors:['#fff']}
+  }).render();
+
+  // Reasoning list
+  document.getElementById('reasoning-list').innerHTML = skus.slice(0,5).map(s => `
+    <div style="margin-bottom:10px;padding:8px;background:#F8FAFC;border-radius:6px">
+      <div style="font-weight:600;color:#1E293B;margin-bottom:2px">#${s.rank} ${s.sku_id} <span style="color:#94A3B8;font-weight:400">— ${s.product_name||''}</span></div>
+      <div style="color:#475569;font-size:12px">${s.reasoning || '—'}</div>
+    </div>
+  `).join('');
+}
+
+loadRetro();
 </script>
 {% endblock %}

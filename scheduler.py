@@ -52,10 +52,28 @@ def send_monday_report():
         logger.error(f"Failed to send Monday report: {e}")
 
 
+def log_weekly_actuals():
+    """Brief Part 5B: log last week's forecast vs actuals to
+    forecast_accuracy_log before retraining. Runs before the pipeline so the
+    reorder engine reads the latest rolling MAPE."""
+    try:
+        sys.path.insert(0, os.path.dirname(__file__))
+        from scripts import log_weekly_actuals as logger_mod
+        logger_mod.main()
+        logger.info("Weekly actuals logged to forecast_accuracy_log")
+    except SystemExit:
+        # main() may sys.exit(1) when files aren't ready — non-fatal
+        logger.info("Weekly actuals logging skipped (no data ready)")
+    except Exception as e:
+        logger.error(f"Weekly actuals logging failed: {e}")
+
+
 def monday_job():
-    """Main Monday morning job: run pipeline then send report."""
+    """Main Monday morning job: log actuals → run pipeline → send report."""
     logger.info("=" * 60)
     logger.info("MONDAY PIPELINE JOB STARTED")
+
+    log_weekly_actuals()
 
     try:
         sys.path.insert(0, os.path.dirname(__file__))

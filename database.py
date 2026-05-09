@@ -31,8 +31,42 @@ def init_db(app):
     db.init_app(app)
     with app.app_context():
         db.create_all()
+        _ensure_gst_columns()
         _seed_if_empty()
     logger.info(f"Database initialized: {db_uri}")
+
+
+def _ensure_gst_columns():
+    """Cross-DB migration: add supplier_*/state/gstin columns to existing
+    tables when SQLAlchemy create_all() can't (it only creates new tables).
+    Uses the dialect-neutral Inspector so the same code works on SQLite and
+    Postgres (Docker)."""
+    from sqlalchemy import text, inspect
+    try:
+        insp = inspect(db.engine)
+        existing_tables = set(insp.get_table_names())
+        with db.engine.begin() as conn:
+            if "skus" in existing_tables:
+                sku_cols = {c["name"] for c in insp.get_columns("skus")}
+                for col, decl in [
+                    ("supplier_name",   "VARCHAR(255)"),
+                    ("supplier_gstin",  "VARCHAR(20)"),
+                    ("supplier_state",  "VARCHAR(50)"),
+                ]:
+                    if col not in sku_cols:
+                        conn.execute(text(f"ALTER TABLE skus ADD COLUMN {col} {decl}"))
+                        logger.info(f"  added skus.{col}")
+            if "stores" in existing_tables:
+                store_cols = {c["name"] for c in insp.get_columns("stores")}
+                for col, decl in [
+                    ("state", "VARCHAR(50) DEFAULT 'Maharashtra'"),
+                    ("gstin", "VARCHAR(20)"),
+                ]:
+                    if col not in store_cols:
+                        conn.execute(text(f"ALTER TABLE stores ADD COLUMN {col} {decl}"))
+                        logger.info(f"  added stores.{col}")
+    except Exception as e:
+        logger.warning(f"GST column migration skipped ({e})")
 
 
 def _seed_if_empty():
@@ -42,9 +76,13 @@ def _seed_if_empty():
         return
     logger.info("Seeding database from CSV files...")
 
-    # 1. Default store
-    store = Store(id='store-pune-001', name='Sunrise Pune', city='Pune')
+    # 1. Default store (Pune is in Maharashtra; set state for GST compliance)
+    store = Store(id='store-pune-001', name='Sunrise Pune', city='Pune',
+                  state='Maharashtra', gstin='27AAACS1234A1Z5')
     db.session.add(store)
+    # Flush so the Store row is visible to subsequent FK inserts on Postgres
+    # (autoflush during seeding would otherwise raise ForeignKeyViolation).
+    db.session.flush()
     store_id = store.id
 
     # 2. SKU Master
@@ -107,8 +145,37 @@ def _seed_if_empty():
     # 6. Seed supplier lead time logs from SKU master
     _seed_supplier_logs(store_id)
 
+    # 7. Backfill GST + supplier metadata so the reorder/PO flow works for
+    # every SKU out of the box (Brief Part 6A — defaults, owner can override).
+    _backfill_gst_supplier_defaults()
+
     db.session.commit()
     logger.info("Database seeding complete.")
+
+
+_CATEGORY_HSN = {
+    "personal_care":  "3401",  # soaps, shampoos
+    "household":      "3402",  # cleaning agents
+    "packaged_food":  "1905",  # bakery / packaged biscuits
+}
+
+
+def _backfill_gst_supplier_defaults():
+    """Populate supplier_name/state/gstin and HSN/GST for any SKU missing them.
+    Idempotent — won't overwrite values an owner has already set."""
+    import hashlib
+    for s in SKU.query.all():
+        if not s.supplier_name and s.brand:
+            s.supplier_name = s.brand
+        if not s.supplier_state:
+            s.supplier_state = "Maharashtra"
+        if not s.supplier_gstin and s.brand:
+            digest = hashlib.sha1(s.brand.encode()).hexdigest().upper()[:13]
+            s.supplier_gstin = "27" + digest
+        if not s.hsn_code:
+            s.hsn_code = _CATEGORY_HSN.get((s.category or "").lower(), "9999")
+        if not s.gst_rate:
+            s.gst_rate = 18.0
 
 
 def _seed_batches(store_id):
@@ -168,11 +235,18 @@ def _seed_supplier_logs(store_id):
 
 # ── Query Helpers (replace pd.read_csv everywhere) ──
 
-def get_sku_list(store_id=None):
-    """Get all SKUs as list of dicts."""
-    q = SKU.query
-    if store_id:
-        q = q.filter_by(store_id=store_id)
+def _scope(query, model, store_ids):
+    """Apply store-scoping filter unless store_ids is None (admin/system)."""
+    if store_ids is None:
+        return query
+    if not store_ids:
+        return query.filter(False)  # explicit empty list -> no rows
+    return query.filter(model.store_id.in_(store_ids))
+
+
+def get_sku_list(store_ids=None):
+    """Get SKUs scoped to the user's stores."""
+    q = _scope(SKU.query, SKU, store_ids)
     return [{"sku_id": s.sku_code, "product_name": s.product_name,
              "brand": s.brand, "category": s.category,
              "unit_price": float(s.unit_price or 0),
@@ -183,11 +257,13 @@ def get_sku_list(store_id=None):
              "db_id": s.id} for s in q.all()]
 
 
-def get_batch_expiry(store_id=None):
+def get_batch_expiry(store_ids=None):
     """Get real batch expiry data from the batches table — NOT random."""
     q = db.session.query(Batch, SKU).join(SKU, Batch.sku_id == SKU.id)
-    if store_id:
-        q = q.filter(Batch.store_id == store_id)
+    if store_ids is not None:
+        if not store_ids:
+            return []
+        q = q.filter(Batch.store_id.in_(store_ids))
     results = []
     today = datetime.utcnow().date()
     for batch, sku in q.all():
@@ -213,13 +289,17 @@ def get_batch_expiry(store_id=None):
     return sorted(results, key=lambda x: x["days_to_expiry"])
 
 
-def get_supplier_lead_times(store_id=None):
+def get_supplier_lead_times(store_ids=None):
     """Get actual supplier lead times with P80 calculation from DB logs."""
     import numpy as np
     q = db.session.query(SupplierLeadTimeLog, SKU).join(
         SKU, SupplierLeadTimeLog.sku_id == SKU.id)
-    if store_id:
-        q = q.filter(SupplierLeadTimeLog.store_id == store_id)
+    if store_ids is not None:
+        if not store_ids:
+            return {"avg_lead_time": 0, "p80_lead_time": 0,
+                    "festive_avg_lead_time": 0, "supplier_count": 0,
+                    "suppliers": [], "sku_details": []}
+        q = q.filter(SupplierLeadTimeLog.store_id.in_(store_ids))
 
     sku_lead_times = {}
     for log, sku in q.all():
@@ -276,9 +356,13 @@ def get_supplier_lead_times(store_id=None):
     }
 
 
-def create_sku(data, store_id='store-pune-001'):
-    """Create a new SKU in the database."""
-    sku_code = data.get("sku_code", "").strip()
+def create_sku(data, store_id=None):
+    """Create a new SKU in the DB. store_id must be one the user has access to.
+    CSV export happens lazily at pipeline startup (export_db_to_csv) — no
+    per-mutation CSV writes (Brief C8 fix: DB is source of truth)."""
+    if store_id is None:
+        store_id = 'store-pune-001'
+    sku_code = (data.get("sku_code") or data.get("sku_id") or "").strip()
     if not sku_code:
         return False, "SKU code is required"
     existing = SKU.query.filter_by(sku_code=sku_code, store_id=store_id).first()
@@ -289,33 +373,138 @@ def create_sku(data, store_id='store-pune-001'):
         product_name=data.get("product_name", ""),
         brand=data.get("brand", ""),
         category=data.get("category", ""),
-        unit_price=float(data.get("unit_price", 0)),
-        cost_price=float(data.get("cost_price", 0)),
-        shelf_life_days=int(data.get("shelf_life_days", 365)),
-        moq_from_supplier=int(data.get("moq_from_supplier", 6)),
-        supplier_lead_time_days=int(data.get("supplier_lead_time_days", 7)),
+        unit_price=float(data.get("unit_price", 0) or 0),
+        cost_price=float(data.get("cost_price", 0) or 0),
+        shelf_life_days=int(data.get("shelf_life_days", 365) or 365),
+        moq_from_supplier=int(data.get("moq_from_supplier", 6) or 6),
+        supplier_lead_time_days=int(data.get("supplier_lead_time_days", 7) or 7),
+        hsn_code=(data.get("hsn_code") or None),
+        gst_rate=(float(data["gst_rate"]) if data.get("gst_rate") not in (None, "") else None),
+        supplier_name=(data.get("supplier_name") or None),
+        supplier_gstin=(data.get("supplier_gstin") or None),
+        supplier_state=(data.get("supplier_state") or None),
         store_id=store_id
     )
     db.session.add(sku)
     db.session.commit()
-    # Also write to CSV for pipeline backward compatibility
-    _sync_sku_to_csv(sku)
     return True, f"SKU {sku_code} added successfully"
 
 
-def delete_sku(sku_code, store_id='store-pune-001'):
-    """Delete a SKU from the database."""
-    sku = SKU.query.filter_by(sku_code=sku_code, store_id=store_id).first()
+def delete_sku(sku_code, store_ids=None):
+    """Delete a SKU from the DB. The SKU must belong to one of the user's
+    store_ids (Brief Part 2B: cross-store access blocked at the query layer)."""
+    q = SKU.query.filter_by(sku_code=sku_code)
+    if store_ids is not None:
+        if not store_ids:
+            return False, "no store access"
+        q = q.filter(SKU.store_id.in_(store_ids))
+    sku = q.first()
     if not sku:
         return False, f"{sku_code} not found"
     db.session.delete(sku)
     db.session.commit()
-    _remove_sku_from_csv(sku_code)
     return True, f"SKU {sku_code} deleted"
 
 
-def add_audit_entry(user_name, sku_id, field, old_val, new_val, reason, store_id='store-pune-001'):
+def export_db_to_csv():
+    """Brief C8 fix: write the canonical DB tables out as CSVs that the
+    pipeline backend scripts read. Called once at the start of run_pipeline()
+    so the pipeline always sees the latest DB state."""
+    try:
+        skus = SKU.query.all()
+        if skus:
+            df = pd.DataFrame([{
+                "sku_id": s.sku_code, "product_name": s.product_name,
+                "brand": s.brand, "category": s.category,
+                "subcategory": "",
+                "unit_price": float(s.unit_price or 0),
+                "cost_price": float(s.cost_price or 0),
+                "shelf_life_days": s.shelf_life_days,
+                "moq_from_supplier": s.moq_from_supplier,
+                "supplier_lead_time_days": s.supplier_lead_time_days,
+            } for s in skus])
+            df.to_csv(os.path.join(DATA, "sku_master.csv"), index=False)
+            logger.info(f"  exported {len(skus)} SKUs DB → sku_master.csv")
+        outlets = Outlet.query.all()
+        if outlets:
+            df = pd.DataFrame([{
+                "outlet_id": o.outlet_code,
+                "outlet_name": "",
+                "outlet_type": o.channel,
+                "city": o.city,
+                "area": o.area,
+                "channel": o.channel,
+            } for o in outlets])
+            existing_path = os.path.join(DATA, "outlet_master.csv")
+            if os.path.exists(existing_path):
+                # preserve outlet_name from the file if present
+                try:
+                    existing = pd.read_csv(existing_path)
+                    if "outlet_name" in existing.columns:
+                        name_map = dict(zip(existing["outlet_id"], existing["outlet_name"]))
+                        df["outlet_name"] = df["outlet_id"].map(name_map).fillna("")
+                except Exception:
+                    pass
+            df.to_csv(existing_path, index=False)
+            logger.info(f"  exported {len(outlets)} outlets DB → outlet_master.csv")
+        invs = InventorySnapshot.query.all()
+        if invs:
+            df = pd.DataFrame([{
+                "sku_id": SKU.query.get(i.sku_id).sku_code if SKU.query.get(i.sku_id) else "",
+                "warehouse_stock": i.warehouse_stock,
+                "in_transit_qty": i.in_transit_qty,
+                "committed_qty": i.committed_qty,
+                "last_receipt_date": i.last_receipt_date.isoformat() if i.last_receipt_date else "",
+            } for i in invs])
+            df = df[df["sku_id"] != ""]
+            if len(df) > 0:
+                df.to_csv(os.path.join(DATA, "inventory_snapshot.csv"), index=False)
+                logger.info(f"  exported {len(df)} inventory snapshots DB → inventory_snapshot.csv")
+    except Exception as e:
+        logger.warning(f"export_db_to_csv failed (pipeline will use existing CSVs): {e}")
+
+
+def get_outlet_list(store_ids=None):
+    """Return all outlets scoped to user's stores."""
+    q = Outlet.query
+    if store_ids is not None:
+        if not store_ids:
+            return []
+        q = q.filter(Outlet.store_id.in_(store_ids))
+    return [{
+        "outlet_id": o.outlet_code,
+        "outlet_type": o.outlet_type or "",
+        "city": o.city or "",
+        "area": o.area or "",
+        "channel": o.channel or "",
+        "store_id": o.store_id,
+    } for o in q.all()]
+
+
+def get_sku_list_full(store_ids=None):
+    """Return all SKU master fields as a list of dicts (DB-backed)."""
+    q = _scope(SKU.query, SKU, store_ids)
+    return [{
+        "sku_id": s.sku_code, "product_name": s.product_name,
+        "brand": s.brand, "category": s.category,
+        "unit_price": float(s.unit_price or 0),
+        "cost_price": float(s.cost_price or 0),
+        "shelf_life_days": s.shelf_life_days,
+        "moq_from_supplier": s.moq_from_supplier,
+        "supplier_lead_time_days": s.supplier_lead_time_days,
+        "hsn_code": s.hsn_code or "",
+        "gst_rate": float(s.gst_rate or 0),
+        "supplier_name": s.supplier_name or "",
+        "supplier_gstin": s.supplier_gstin or "",
+        "supplier_state": s.supplier_state or "",
+        "is_active": bool(s.is_active),
+    } for s in q.all()]
+
+
+def add_audit_entry(user_name, sku_id, field, old_val, new_val, reason, store_id=None):
     """Log an inventory adjustment to the database audit table."""
+    if store_id is None:
+        store_id = 'store-pune-001'
     from models import DataQualityLog
     log = DataQualityLog(
         filename=f"audit:{sku_id}:{field}",
@@ -331,11 +520,14 @@ def add_audit_entry(user_name, sku_id, field, old_val, new_val, reason, store_id
     return True
 
 
-def get_audit_trail(store_id='store-pune-001'):
-    """Get audit trail from the database."""
-    logs = DataQualityLog.query.filter(
-        DataQualityLog.filename.like("audit:%")
-    ).order_by(DataQualityLog.upload_date.desc()).all()
+def get_audit_trail(store_ids=None):
+    """Get audit trail from the database, scoped to the user's stores."""
+    q = DataQualityLog.query.filter(DataQualityLog.filename.like("audit:%"))
+    if store_ids is not None:
+        if not store_ids:
+            return []
+        q = q.filter(DataQualityLog.store_id.in_(store_ids))
+    logs = q.order_by(DataQualityLog.upload_date.desc()).all()
     return [{
         "timestamp": l.upload_date.isoformat() if l.upload_date else "",
         "user": l.rejection_reasons.get("user", "System") if l.rejection_reasons else "System",
@@ -347,14 +539,21 @@ def get_audit_trail(store_id='store-pune-001'):
     } for l in logs]
 
 
-def log_barcode_scan(data, store_id='store-pune-001'):
-    """Log a barcode scan to the database batches table."""
+def log_barcode_scan(data, store_ids=None):
+    """Log a barcode scan to the database batches table. Scan is rejected if
+    the SKU does not belong to one of the user's stores."""
     sku_code = data.get("sku_code", "").strip()
     if not sku_code:
         return False, "SKU code required"
-    sku = SKU.query.filter_by(sku_code=sku_code).first()
+    q = SKU.query.filter_by(sku_code=sku_code)
+    if store_ids is not None:
+        if not store_ids:
+            return False, "no store access"
+        q = q.filter(SKU.store_id.in_(store_ids))
+    sku = q.first()
     if not sku:
         return False, f"SKU {sku_code} not found in master"
+    store_id = sku.store_id
     # Create a batch entry from the scan
     batch = Batch(
         sku_id=sku.id,
@@ -394,42 +593,54 @@ def log_forecast_accuracy(sku_code, forecasted, actual, model_used, store_id='st
 
 
 def get_forecast_accuracy_from_db(store_id=None):
-    """Get rolling MAPE from DB instead of static JSON (Phase 8 fix)."""
+    """Brief Part 5B: rolling 4-week MAPE per SKU from forecast_accuracy_log.
+    Falls back to the static JSON (test-set MAPE) when no actuals have been
+    logged yet so dashboards remain populated on day one."""
     import numpy as np
     q = ForecastAccuracyLog.query
     if store_id:
         q = q.filter_by(store_id=store_id)
-    logs = q.all()
+    logs = q.order_by(ForecastAccuracyLog.week_start_date.desc()).all()
     if not logs:
-        # Fallback to JSON if no DB entries yet
         json_path = os.path.join(PROCESSED, "forecast_accuracy.json")
         if os.path.exists(json_path):
             with open(json_path) as f:
-                return json.load(f)
-        return {"overall_mape_pct": 0, "per_sku_mape": {}}
+                d = json.load(f)
+                d["source"] = "test_set_fallback"
+                d["needs_retrain"] = float(d.get("overall_mape", 0)) > 20
+                return d
+        return {"overall_mape_pct": 0, "per_sku_mape": {}, "source": "empty"}
 
-    # Compute rolling MAPE from DB
+    # Group by SKU, take last 4 entries each (rolling 4-week)
     per_sku = {}
     for log in logs:
         sku = SKU.query.get(log.sku_id)
         if not sku:
             continue
-        code = sku.sku_code
-        if code not in per_sku:
-            per_sku[code] = {"mapes": [], "forecasted": [], "actual": []}
-        per_sku[code]["mapes"].append(float(log.mape_contribution or 0))
-        per_sku[code]["forecasted"].append(log.forecasted_units)
-        per_sku[code]["actual"].append(log.actual_units)
+        per_sku.setdefault(sku.sku_code, []).append({
+            "week": log.week_start_date,
+            "mape": float(log.mape_contribution or 0),
+            "forecasted": log.forecasted_units,
+            "actual": log.actual_units,
+        })
 
     per_sku_mape = {}
+    flagged_for_retrain = []
     all_mapes = []
-    for code, data in per_sku.items():
-        avg_mape = round(float(np.mean(data["mapes"])), 1)
-        all_mapes.append(avg_mape)
-        per_sku_mape[code] = {"mape": avg_mape, "model_used": "lgbm_tuned"}
+    for code, entries in per_sku.items():
+        last4 = entries[:4]
+        rolling = float(np.mean([e["mape"] for e in last4]))
+        all_mapes.append(rolling)
+        per_sku_mape[code] = {
+            "mape": round(rolling, 1),
+            "model_used": "lgbm_tuned",
+            "weeks_of_history": len(entries),
+            "rolling_window": len(last4),
+        }
+        if rolling > 25:
+            flagged_for_retrain.append(code)
 
     overall = round(float(np.mean(all_mapes)), 1) if all_mapes else 0
-    needs_retrain = overall > 20  # Brief: auto-retrain if MAPE > 20%
 
     return {
         "overall_mape_pct": overall,
@@ -437,8 +648,81 @@ def get_forecast_accuracy_from_db(store_id=None):
         "per_sku_mape": per_sku_mape,
         "lgbm_count": len(per_sku_mape),
         "rolling_avg_count": 0,
-        "needs_retrain": needs_retrain,
-        "source": "database"
+        "needs_retrain": overall > 15,
+        "skus_flagged_for_priority_retrain": flagged_for_retrain,
+        "total_weeks_logged": len(logs),
+        "source": "database",
+    }
+
+
+def start_pipeline_run(store_id='store-pune-001'):
+    """Brief Phase 7: create a pipeline_runs row at start; return its id."""
+    run = PipelineRun(
+        started_at=datetime.utcnow(),
+        status=PipelineStatus.RUNNING,
+        step_reached=0,
+        store_id=store_id
+    )
+    db.session.add(run)
+    db.session.commit()
+    return run.id
+
+
+def update_pipeline_step(run_id, step_reached):
+    if not run_id:
+        return
+    run = PipelineRun.query.get(run_id)
+    if run:
+        run.step_reached = step_reached
+        db.session.commit()
+
+
+def finish_pipeline_run(run_id, success=True, error_message=None):
+    if not run_id:
+        return
+    run = PipelineRun.query.get(run_id)
+    if not run:
+        return
+    run.completed_at = datetime.utcnow()
+    run.status = PipelineStatus.COMPLETE if success else PipelineStatus.FAILED
+    if error_message:
+        run.error_message = error_message
+    db.session.commit()
+
+
+def get_latest_pipeline_run(store_id=None, history=5):
+    """Return the latest run + a short history (for dashboard rendering).
+    history=N: include the N most recent runs as pipeline_history."""
+    q = PipelineRun.query
+    if store_id:
+        q = q.filter_by(store_id=store_id)
+    runs = q.order_by(PipelineRun.started_at.desc()).limit(max(history, 1)).all()
+    if not runs:
+        return {"running": False, "status": "idle", "step_reached": 0,
+                "started_at": None, "completed_at": None, "error": None,
+                "pipeline_history": []}
+    run = runs[0]
+    history_payload = []
+    for r in runs:
+        elapsed = None
+        if r.started_at and r.completed_at:
+            elapsed = round((r.completed_at - r.started_at).total_seconds(), 1)
+        history_payload.append({
+            "started_at": r.started_at.isoformat() if r.started_at else None,
+            "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+            "status": r.status,
+            "step_reached": r.step_reached,
+            "elapsed_seconds": elapsed,
+            "error": (r.error_message or "")[:300],
+        })
+    return {
+        "running": run.status == PipelineStatus.RUNNING,
+        "status": run.status,
+        "step_reached": run.step_reached,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+        "error": run.error_message,
+        "pipeline_history": history_payload,
     }
 
 
@@ -471,34 +755,5 @@ def get_available_stock_with_batch_expiry(sku_code, store_id=None):
     return sum(b.qty_received or 0 for b in valid_batches)
 
 
-# ── CSV sync helpers (backward compatibility during migration) ──
-
-def _sync_sku_to_csv(sku):
-    """Write a new SKU back to CSV for pipeline compatibility."""
-    path = os.path.join(DATA, "sku_master.csv")
-    try:
-        df = pd.read_csv(path) if os.path.exists(path) else pd.DataFrame()
-        new_row = pd.DataFrame([{
-            "sku_id": sku.sku_code, "product_name": sku.product_name,
-            "brand": sku.brand, "category": sku.category,
-            "unit_price": float(sku.unit_price or 0),
-            "cost_price": float(sku.cost_price or 0),
-            "shelf_life_days": sku.shelf_life_days,
-            "moq_from_supplier": sku.moq_from_supplier,
-            "supplier_lead_time_days": sku.supplier_lead_time_days
-        }])
-        df = pd.concat([df, new_row], ignore_index=True)
-        df.to_csv(path, index=False)
-    except Exception as e:
-        logger.warning(f"CSV sync failed: {e}")
-
-
-def _remove_sku_from_csv(sku_code):
-    """Remove a SKU from the CSV for pipeline compatibility."""
-    path = os.path.join(DATA, "sku_master.csv")
-    try:
-        df = pd.read_csv(path)
-        df = df[df["sku_id"] != sku_code]
-        df.to_csv(path, index=False)
-    except Exception as e:
-        logger.warning(f"CSV remove failed: {e}")
+# CSV sync helpers were removed in Brief C8 fix: DB is the canonical store,
+# CSVs are regenerated via export_db_to_csv() at pipeline startup.

@@ -1,286 +1,221 @@
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/your-gif-id-here/demand-mirage-banner.gif" alt="The Demand Mirage Banner" width="100%">
+
+<img src="static/images/ledgr-brand.png" alt="Ledgr" width="380"/>
+
+### Demand-forecasting AI for FMCG distributors
+
+Reorder recommendations, stockout prevention, GST-compliant POs, batch-expiry tracking, multi-store scoping, and a RAG-grounded chatbot — backed by a 6-step LightGBM pipeline. Originally built for **Sunrise Consumer Goods** (Pune & Nashik, 320 outlets, 40 SKUs) for the **Demand Mirage** problem statement.
+
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](#)
+[![Flask](https://img.shields.io/badge/Flask-3.0-000000?style=for-the-badge&logo=flask&logoColor=white)](#)
+[![Postgres](https://img.shields.io/badge/PostgreSQL-15-336791?style=for-the-badge&logo=postgresql&logoColor=white)](#)
+[![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0-D71F00?style=for-the-badge&logo=sqlalchemy&logoColor=white)](#)
+[![LightGBM](https://img.shields.io/badge/LightGBM-Forecast-2EA44F?style=for-the-badge)](#)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-RAG-F7931E?style=for-the-badge&logo=scikitlearn&logoColor=white)](#)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](#)
+[![Tabler](https://img.shields.io/badge/Tabler%20UI-1.2-066FD1?style=for-the-badge)](#)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](#)
+[![Jetpack%20Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](#)
+[![CameraX](https://img.shields.io/badge/CameraX-+%20ML%20Kit-EA4335?style=for-the-badge&logo=android&logoColor=white)](#)
+
 </div>
 
-# Sunrise Demand AI — Intelligent Inventory Optimization System
-
-**AI-powered demand forecasting and inventory optimization for FMCG distributors**
-
-Built for Sunrise Consumer Goods — Pune & Nashik distribution network (320 outlets, 40 SKUs)
-
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)
-![Flask](https://img.shields.io/badge/Flask-3.0-000000?style=flat-square&logo=flask)
-![LightGBM](https://img.shields.io/badge/LightGBM-ML-green?style=flat-square)
-![Tabler](https://img.shields.io/badge/Tabler-UI-206bc4?style=flat-square)
-
 ---
 
-## Problem Statement
-
-**PS 5 — The Demand Mirage**
-
-FMCG distributors face a critical data quality challenge: when sales show zero, does it mean genuine lack of demand, or is data simply missing? Misclassification leads to either devastating stockouts during peak seasons (Diwali 2023) or costly overstock situations with trapped capital.
-
-This system solves the **True Zero vs Missing Data** classification problem and builds an end-to-end demand forecasting and reorder optimization pipeline — with a retrospective analysis of the Diwali 2023 stockout event.
-
----
-
-## System Architecture
-
-```
-+-----------------------------------------------------------+
-|                    Flask Web Server                        |
-|              Tabler UI Dashboard (6 pages)                 |
-+----------+----------+----------+-----------+--------------+
-| Overview | Forecast | Reorder  | Retro-    | Classification|
-| KPIs     | Explorer | Plan     | spective  | & Accuracy    |
-+----+-----+----+-----+----+-----+----+------+------+-------+
-     |          |          |          |              |
-+----v----------v----------v----------v--------------v-------+
-|              6-Step Backend Pipeline                        |
-|                                                            |
-|  Step 1: Data Classification (True Zero / Missing Data)    |
-|  Step 2: LightGBM Demand Forecasting (SKU-level, 6-week)  |
-|  Step 3: Diwali 2023 Retrospective (No-lookahead)          |
-|  Step 4: Reorder Engine (MOQ / Shelf-life / Safety Stock)  |
-|  Step 5: SKU Classification (Movement + ABC Analysis)      |
-|  Step 6: Monday Morning Report Generator                   |
-+------------------------------------------------------------+
-```
-
----
-
-## Key Features
-
-### 1. True Zero vs Missing Data Classification
-
-The raw dataset contains only observed sales rows. The system reconstructs the **complete grid** of all `week x SKU x outlet` combinations (1.99M rows from 93.6K observed), then classifies each row through a 3-step rule-based pipeline:
-
-| Step | Logic | Classification |
-|------|-------|---------------|
-| Outlet Reporting | Outlet reports zero across ALL SKUs in a week | `missing_data` |
-| Stockout Gap | Warehouse stock <= 20 units + zero sales | `stockout_gap` |
-| Channel Frequency | sell_frequency > 0.6 → `true_zero`, < 0.2 → `missing_data`, else → `uncertain` |
-
-Only `observed`, `true_zero`, `uncertain`, and `stockout_gap` rows are included in forecasting. `missing_data` rows are excluded to prevent systematic demand underestimation.
-
-### 2. SKU-Level Demand Forecasting
-
-- Individual **LightGBM** model per SKU (40 models) with 14 engineered features
-- Feature set includes: lag variables, rolling averages, festive calendar flags, promotional uplift, channel mix, seasonality
-- **95% confidence intervals** computed from training residual distribution: `forecast +/- 1.96 x residual_std`
-- Rolling average fallback for SKUs with insufficient data
-- Overall MAPE: **10.4%** across all SKUs
-
-### 3. Diwali 2023 Retrospective Analysis
-
-Detects stockout SKUs using a 5-signal scoring system with **no lookahead bias** — detection cutoff is strictly 2 weeks post-Diwali (November 7, 2023):
-
-| Signal | Points | Detection Method |
-|--------|--------|-----------------|
-| Sales Dropout | +3 | >=80% drop from rolling average for 2+ consecutive weeks post-Diwali |
-| Demand Surge | +2 | Pre-Diwali sales spike > 1.5x baseline |
-| Diwali 2022 Pattern | +2 | Historical festive sensitivity > 1.3x normal |
-| Inventory Low | +1 | Available stock below lead-time safety threshold |
-| Promo Overlap | +1 | Active promotion during Diwali period |
-
-All signals use only pre-Diwali 2023 or historical 2022 data. No post-event information is used for detection.
-
-### 4. Intelligent Reorder Engine
-
-- **Hard constraints enforced**: MOQ compliance, lead-time coverage, safety stock (2 weeks)
-- **Shelf-life validation**: `assert final_reorder_qty <= shelf_life_max` — guaranteed 0 violations
-- **Business impact metrics** per SKU: `revenue_at_risk` (for stockout SKUs) and `overstock_value` (for excess inventory)
-- Plain-English reasoning text for every recommendation
-
-### 5. SKU Classification and ABC Analysis
-
-- Movement classification: Fast Mover / Slow Mover / Seasonal / Dead Stock
-- ABC revenue analysis with cumulative contribution percentages (A: top 70%, B: 70-90%, C: tail)
-
-### 6. Enterprise Dashboard
-
-- 6 interactive pages built with Tabler UI and ApexCharts
-- Real-time pipeline execution from the dashboard
-- Filterable reorder table with risk flags and reasoning modal
-- CSV export for reorder recommendations
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- Python 3.10 or higher
-- pip
-
-### Installation
+## Quick start
 
 ```bash
-git clone https://github.com/Atul1242/dimand_Mirage.git
-cd dimand_Mirage/project
-pip install -r requirements.txt
-python app.py
+git clone https://github.com/HoneyBadger-010/Ledgr-Retail-SKU-Management-Tool.git
+cd Ledgr-Retail-SKU-Management-Tool
+./run.sh                # auto-detects LAN IP, brings up Postgres + web + scheduler
+# (or: docker compose up if you don't need the Android pairing QR)
 ```
 
-Open **http://localhost:5000** in your browser. The pipeline runs automatically on startup.
+First boot takes ~60 seconds — Postgres init, schema migration, seed of 40 SKUs / 320 outlets / supplier metadata / 103 batches, and an automatic pipeline run.
 
-### Input Data Files
+| | |
+|---|---|
+| **Dashboard** | [http://localhost:5000](http://localhost:5000) |
+| **Demo accounts** | `owner@sunrise.com` · `sunrise2024` <br> `manager@sunrise.com` · `manager2024` <br> `salesman@sunrise.com` · `sales2024` |
+| **Logs** | `docker compose logs -f web` |
+| **Reset** | `docker compose down -v` |
 
-The following CSV files should be present in the `data/` directory:
-
-| File | Description |
-|------|-------------|
-| `sales_history.csv` | Weekly sales by outlet x SKU (93,600 rows, 156 weeks) |
-| `inventory_snapshot.csv` | Current warehouse stock, in-transit, committed quantities |
-| `sku_master.csv` | Product metadata: shelf life, MOQ, lead time, pricing |
-| `outlet_master.csv` | Outlet details: channel type, city, tier |
-| `festive_calendar.csv` | Festival dates with demand impact scores |
-| `promotions_calendar.csv` | Promotional periods with expected uplift percentages |
+> The Android scanner pairing QR encodes the host's LAN IP automatically when you launch with `./run.sh` — no manual config needed.
 
 ---
 
-## Dashboard Pages
+## What's inside
 
-### 1. Dashboard Overview
-![Overview Dashboard](assets/dash1.png)
-Executive KPIs (stockout risk, revenue at risk, order value), top-10 stockout chart, movement donut, ABC distribution.
+### 1. The web app
+A Flask + Tabler UI dashboard for the entire FMCG inventory lifecycle.
 
-### 2. Interactive AI Assistant
-![AI Chatbot](assets/dash2.png)
-Chat with your data using Gemini 2.0 Flash to instantly get answers about reorders, SKUs, and forecasting methodology.
+| Page | What it shows |
+|---|---|
+| **Dashboard** | Revenue at risk · pending order value · live MAPE · pipeline status with run history |
+| **Reorder** | 40-row pending-approval table with adjustable quantities, owner-only "Approve" — flows into Approved + In-Transit tabs |
+| **Forecasts** | 6-week aggregate horizon, MAPE by category, top/bottom-confidence SKUs |
+| **Diwali Retrospective** | Detection of the 14 known stockouts using 5 signals (capped surge, demand surge, Diwali 2022 pattern, inventory low, promo overlap) — 10/14 recall, no lookahead bias |
+| **Outlets** | All 320 outlets with city/area/channel filters, per-outlet 156-week sales |
+| **Data Quality** | Accept/reject/missing breakdown over actually-collected rows |
+| **Supplier Performance** | Avg / P80 / festive lead times per supplier, variance scorecard |
+| **Batch Expiry** | All batches with critical (<14d) / warning / OK buckets |
+| **Purchase Orders** | GST-compliant PO generation grouped by supplier, intrastate (CGST + SGST) vs interstate (IGST) routing, persistent draft → approved flow, downloadable PDF invoices |
+| **SKU Management** | Full SKU master incl. HSN/GST/supplier metadata, CSV upload, barcode-scan add, Add via Barcode QR for the Android scanner |
+| **Audit Trail** | Inventory adjustments with user + reason |
+| **Settings** | Profile, notification preferences, security (CSRF + session timeout) |
 
-### 3. Diwali Retrospective Analysis
-![Diwali Retrospective](assets/dash3.png)
-Top-14 predicted stockout SKUs with signal breakdown, per-SKU sales timeline with Diwali annotations, and AI reasoning.
+### 2. The 6-step pipeline (`backend/`)
 
-### 4. 6-Week Forecast Explorer
-![Forecast Explorer](assets/dash4.png)
-SKU-level forecast with historical trend, 95% confidence bands, and model type indicators.
+```
+1. Data Classification    → True-zero / missing-data / stockout-gap / uncertain (channel-aware)
+2. Demand Forecasting     → LightGBM, one model per SKU, 6-week horizon
+3. Diwali Retrospective   → No-lookahead 5-signal stockout detection
+4. Reorder Engine         → Batch-aware available stock, MAPE-driven safety stock,
+                            chronological week-by-week stockout simulation, EXPIRY_ALERT
+5. SKU Classification     → Movement (fast/slow/seasonal/dead) + ABC analysis
+6. Monday Report          → executive_summary + urgent_orders + overstock_alerts +
+                            expiry_alerts + full_reorder_list
+```
 
-### 5. Reorder Recommendations
-![Reorder Plan](assets/dash5.png)
-Full recommendations table with risk flags, filterable by category (Urgent/Shelf-Life/Overstock/Perishable), reasoning modal, and CSV download.
+### 3. The Android app (`android/`)
 
-### 6. SKU Classification & Movement
-![SKU Classification](assets/dash6.png)
-Movement categories with top-20 volume chart, velocity vs consistency scatter plot, and ABC revenue table with progress bars.
+Native Kotlin · Jetpack Compose · Material 3 industrial dark theme · CameraX + ML Kit barcode scanning · Retrofit with cookie persistence + CSRF · Room offline scan queue.
 
-### 7. Forecast Accuracy Tracking
-![Forecast Accuracy](assets/dash7.png)
-Overall MAPE score, per-SKU accuracy table with ratings, and MAPE distribution histogram.
+- **Pair**: scan the QR shown in SKU Management (or paste a server URL). The QR carries `{server_url, name}` JSON; the app stores it in DataStore.
+- **Sign in**: salesman credentials → session cookie + CSRF token captured.
+- **Scan**: live viewfinder with industrial corner brackets and an animated scan line. Square reticle for QR codes; wide reticle for retail barcodes. Each detection pops a quantity-confirm card.
+- **Offline-first**: every scan goes into Room first, best-effort upload to `POST /api/sku/scan`. Failed/offline scans show as `QUEUED` with a Sync Now button.
 
+Build: open `android/` in Android Studio (Hedgehog or newer, JDK 17), Sync, then Run. A signed-debug APK lives at `android/app/build/outputs/apk/debug/app-debug.apk` after `./gradlew assembleDebug`.
+
+### 4. The chatbot (RAG)
+
+The chat widget (sparkles button, lower right) answers questions about every domain on the dashboard:
+
+- _"What's the best-performing outlet last week?"_ → OL-263 N Mart Aundh Pune, ₹61,212
+- _"Show me supplier performance and lead times."_ → 12 suppliers · avg 9.0d · P80 12.0d · festive 15.6d, plus per-vendor breakdown
+- _"Are any batches near expiry?"_ → 29 critical (<14d), with SKU IDs and days-to-expiry
+
+Ingests **69 chunks** spanning SKUs, outlets, suppliers, batches, POs, pipeline runs, data quality, forecasts, retrospective accuracy, and classification — retrieved via TF-IDF + cosine before being sent to the LLM, so per-query cost stays bounded as the catalogue grows.
+
+`OPENROUTER_KEY` in `.env` enables full LLM responses (Gemini 2.0 Flash via OpenRouter). Without it, a local keyword fallback still answers basic queries.
 
 ---
 
-## Project Structure
+## Architecture
 
 ```
-project/
-├── app.py                          # Flask server and API endpoints
-├── pipeline.py                     # 6-step pipeline orchestrator
-├── requirements.txt                # Python dependencies
-├── README.md
-├── .gitignore
-│
-├── backend/
-│   ├── 1_clean_data.py             # True Zero classifier with full grid reconstruction
-│   ├── 2_forecast.py               # LightGBM demand forecaster with residual-based CI
-│   ├── 3_retrospective.py          # Diwali stockout detector (no lookahead bias)
-│   ├── 4_reorder_engine.py         # Constraint-based reorder calculator
-│   ├── 5_sku_classifier.py         # Movement + ABC classifier
-│   └── 6_report_generator.py       # Monday morning report generator (JSON)
-│
-├── templates/
-│   ├── base.html                   # Tabler UI base layout
-│   ├── overview.html               # Overview dashboard
-│   ├── retrospective.html          # Diwali retrospective
-│   ├── forecast.html               # Forecast explorer
-│   ├── reorder.html                # Reorder recommendations
-│   ├── classification.html         # SKU classification
-│   └── accuracy.html               # Forecast accuracy
-│
-├── data/
-│   ├── *.csv                       # Source data files
-│   └── processed/                  # Generated pipeline outputs
-│
-├── docs/
-│   └── true_zero_methodology.md    # Classification methodology documentation
-│
-└── logs/
-    └── pipeline_*.log              # Timestamped execution logs
-```
+┌──────────────────────────────────────────────────────────────────────┐
+│                       Browser (Tabler UI)                            │
+│   Dashboard · Reorder · Forecasts · Retro · Outlets · POs · Audit   │
+└──────────────┬───────────────────────────────┬───────────────────────┘
+               │                               │
+               │ JSON /api/*                   │ HTML (Jinja2)
+               ▼                               ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                    Flask · gunicorn (2 workers)                       │
+│                                                                      │
+│   auth.py        flask-login + bcrypt + CSRF + role-based gating     │
+│   models.py      SQLAlchemy ORM (15 tables)                          │
+│   pipeline.py    DB→CSV export, runs 6 backend scripts in order      │
+│   rag.py         build_chunks + TF-IDF retrieval for chatbot context │
+│   po_pdf.py      reportlab GST-compliant PDF generation              │
+│   notifications.py   WhatsApp (Twilio) + Email + Telegram + non-     │
+│                      submission alerts                                │
+└──────────────┬───────────────────────────────────────────────────────┘
+               │ SQL
+               ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                       PostgreSQL 15                                  │
+└──────────────────────────────────────────────────────────────────────┘
 
----
-
-## Technology Stack
-
-| Component | Technology |
-|-----------|-----------|
-| Backend | Python 3.12, Flask |
-| ML Engine | LightGBM, scikit-learn, NumPy, Pandas |
-| Frontend | Tabler UI (CDN), ApexCharts, Inter font |
-| Pipeline | APScheduler-ready orchestration |
-
----
-
-## Methodology
-
-### True Zero Classification
-
-```
-Step 1: Outlet reported ZERO across ALL SKUs that week?
-        → missing_data (non-reporting outlet)
-
-Step 2: Warehouse stock <= 20 units AND sales = 0?
-        → stockout_gap (unfulfilled demand)
-
-Step 3: sell_frequency = weeks_with_sales / total_reporting_weeks
-        > 0.6 → true_zero (genuine zero demand)
-        < 0.2 → missing_data (product not carried)
-        else  → uncertain (treated conservatively as true_zero)
-```
-
-### Confidence Interval Computation
-
-```
-residuals     = actual_training_values - predicted_training_values
-residual_std  = std(residuals)
-lower_bound   = max(0, forecast - 1.96 * residual_std)   # 95% CI
-upper_bound   = forecast + 1.96 * residual_std
-```
-
-### Shelf-Life Validation
-
-```python
-shelf_life_max = daily_velocity * shelf_life_days
-if final_reorder_qty > shelf_life_max:
-    final_reorder_qty = floor(shelf_life_max / moq) * moq
-assert final_reorder_qty <= shelf_life_max  # Must NEVER fail
-# Result: 0 shelf-life violations guaranteed
+┌──────────────────────────────────────────────────────────────────────┐
+│  APScheduler container                                               │
+│  Mondays 7:45 IST → log_weekly_actuals → run_pipeline → notify       │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Latest Pipeline Results
+## Configuration
 
-| Metric | Value |
-|--------|-------|
-| Total data points (full grid) | 1,996,800 |
-| Observed sales rows | 93,600 |
-| Reconstructed missing rows | 1,903,200 |
-| SKUs analyzed | 40 |
-| Outlets covered | 320 |
-| Time range | 156 weeks |
-| Overall forecast MAPE | 10.4% |
-| LightGBM models trained | 40 |
-| SKUs at stockout risk | 35 |
-| Shelf-life violations | 0 |
-| Total recommended order value | Rs. 13.9M |
-| Revenue at risk (stockout) | Rs. 19.1M |
+`.env.example` has every variable; copy to `.env` to override Docker defaults.
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | Postgres init | `ledgr` / `ledgr` / `ledgr_local_dev` |
+| `WEB_PORT` | Host port for the dashboard | `5000` |
+| `FLASK_SECRET_KEY` | Session/cookie signing | dev key — **must** be replaced in production |
+| `FLASK_ENV` | `development` / `production` | `development` |
+| `LEDGR_PUBLIC_HOST` | Host LAN IP for the Android pairing QR | auto-set by `run.sh` |
+| `OPENROUTER_KEY` | Live LLM responses for the chatbot | unset (local fallback) |
+| `HIDE_DEMO_CREDENTIALS` | Hide the demo accounts block on `/login` | unset |
+| `TWILIO_*`, `MAIL_*`, `TELEGRAM_*` | Notification channels | unset (disabled) |
+
+---
+
+## Running without Docker
+
+```bash
+python -m venv venv
+./venv/bin/pip install -r requirements.txt
+./venv/bin/python app.py        # SQLite at ./sunrise.db
+```
+
+Useful one-shot scripts:
+
+| Script | What it does |
+|---|---|
+| `scripts/install_product_images.py` | Maps and copies product photos into `static/images/products/` |
+| `scripts/backfill_supplier_data.py` | Idempotently fills HSN / GST / supplier metadata for every SKU |
+| `scripts/log_weekly_actuals.py` | Compares last week's forecast vs actuals → `forecast_accuracy_log` |
+| `scripts/reconcile_outlet_channel.py` | One-time fix for `outlet_master.csv` channel column |
+
+---
+
+## Repository layout
+
+```
+.
+├── app.py                Flask app — routes, RAG glue, chatbot endpoint
+├── auth.py               Flask-Login + bcrypt + CSRF + role decorators
+├── database.py           SQLAlchemy init, seed, migrations, query helpers
+├── models.py             ORM models (15 tables)
+├── pipeline.py           6-step pipeline orchestrator
+├── ingestion.py          Sales-data validation firewall (Brief Part 2D)
+├── rag.py                TF-IDF retrieval layer for the chatbot
+├── notifications.py      WhatsApp / Email / Telegram + non-submission alerts
+├── po_pdf.py             GST-compliant PDF invoice generator
+├── scheduler.py          APScheduler Monday cron
+├── backend/              The 6 pipeline steps
+├── templates/            Jinja2 (Tabler-themed) — base.html + per-page
+├── static/               JS, CSS, product images, brand assets
+├── mobile/               PWA scanner shell + service-worker
+├── android/              Native Android Studio project (Kotlin · Compose)
+├── scripts/              One-shot maintenance + setup scripts
+├── data/                 sku_master.csv, outlet_master.csv, sales_history.csv,
+│                         inventory_snapshot.csv, festive_calendar.csv,
+│                         promotions_calendar.csv
+├── docker-compose.yml    Postgres + web + scheduler stack
+├── Dockerfile            Single-image build for web/scheduler
+├── run.sh                LAN-IP-aware boot wrapper
+└── requirements.txt
+```
+
+---
+
+## Production checklist
+
+1. Replace `FLASK_SECRET_KEY` with a real random value.
+2. Set `FLASK_ENV=production` (the app refuses to start with the default key under prod).
+3. Set `HIDE_DEMO_CREDENTIALS=1` to remove the demo accounts block on the login page.
+4. Migrate from the in-file `DEMO_USERS` dict to a real `users` table; add `POST /api/auth/change-password`.
+5. Set `OPENROUTER_KEY` for live LLM responses.
+6. Set `LEDGR_PUBLIC_HOST` to the externally-reachable hostname for Android pairing QR codes.
+7. Front the gunicorn process with nginx + a real TLS cert; flip `usesCleartextTraffic` to `false` in the Android manifest.
 
 ---
 
 ## License
 
-MIT License
+Same as the parent repo. Contributions and bug reports welcome.

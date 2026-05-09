@@ -43,9 +43,9 @@
   <div class="card-header">
     <ul class="nav nav-tabs card-header-tabs" data-bs-toggle="tabs">
       <li class="nav-item"><a href="#tab-all" class="nav-link active" data-bs-toggle="tab"><i class="ti ti-list me-1"></i>All SKUs</a></li>
-      <li class="nav-item"><a href="#tab-upload" class="nav-link" data-bs-toggle="tab"><i class="ti ti-upload me-1"></i>CSV Upload</a></li>
-      <li class="nav-item"><a href="#tab-add" class="nav-link" data-bs-toggle="tab"><i class="ti ti-plus me-1"></i>Add New SKU</a></li>
-      <li class="nav-item"><a href="#tab-barcode" class="nav-link" data-bs-toggle="tab"><i class="ti ti-qrcode me-1"></i>Add via Barcode</a></li>
+      <li class="nav-item" data-roles="owner,manager"><a href="#tab-upload" class="nav-link" data-bs-toggle="tab"><i class="ti ti-upload me-1"></i>CSV Upload</a></li>
+      <li class="nav-item" data-roles="owner,manager"><a href="#tab-add" class="nav-link" data-bs-toggle="tab"><i class="ti ti-plus me-1"></i>Add New SKU</a></li>
+      <li class="nav-item" data-roles="owner,manager"><a href="#tab-barcode" class="nav-link" data-bs-toggle="tab"><i class="ti ti-qrcode me-1"></i>Add via Barcode</a></li>
     </ul>
   </div>
   <div class="card-body">
@@ -120,6 +120,15 @@
                     <div class="col-md-2"><label class="form-label required">Shelf Life (days)</label><input type="number" class="form-control" name="shelf_life_days" required min="1"></div>
                     <div class="col-md-2"><label class="form-label required">MOQ</label><input type="number" class="form-control" name="moq_from_supplier" required min="1"></div>
                     <div class="col-md-2"><label class="form-label required">Lead Time (days)</label><input type="number" class="form-control" name="supplier_lead_time_days" required min="1"></div>
+                  </div>
+                  <hr class="my-3">
+                  <div class="text-muted mb-2" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">GST &amp; Supplier (required for purchase order generation)</div>
+                  <div class="row g-3">
+                    <div class="col-md-3"><label class="form-label">HSN Code</label><input type="text" class="form-control" name="hsn_code" placeholder="e.g. 3401"></div>
+                    <div class="col-md-2"><label class="form-label">GST Rate (%)</label><input type="number" step="0.01" class="form-control" name="gst_rate" placeholder="18"></div>
+                    <div class="col-md-3"><label class="form-label">Supplier Name</label><input type="text" class="form-control" name="supplier_name"></div>
+                    <div class="col-md-2"><label class="form-label">Supplier GSTIN</label><input type="text" class="form-control" name="supplier_gstin" maxlength="15"></div>
+                    <div class="col-md-2"><label class="form-label">Supplier State</label><input type="text" class="form-control" name="supplier_state" placeholder="Maharashtra"></div>
                   </div>
                   <div class="mt-4"><button type="submit" class="btn btn-primary"><i class="ti ti-plus me-1"></i>Add SKU</button><button type="reset" class="btn btn-outline-secondary ms-2">Reset</button></div>
                 </form>
@@ -276,6 +285,15 @@
               <input type="number" class="form-control" id="edit-lead-time" required min="1">
             </div>
           </div>
+          <hr class="my-3">
+          <div class="text-muted mb-2" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">GST &amp; Supplier (required for purchase order generation)</div>
+          <div class="row g-3">
+            <div class="col-md-3"><label class="form-label">HSN Code</label><input type="text" class="form-control" id="edit-hsn-code"></div>
+            <div class="col-md-2"><label class="form-label">GST Rate (%)</label><input type="number" step="0.01" class="form-control" id="edit-gst-rate"></div>
+            <div class="col-md-3"><label class="form-label">Supplier Name</label><input type="text" class="form-control" id="edit-supplier-name"></div>
+            <div class="col-md-2"><label class="form-label">Supplier GSTIN</label><input type="text" class="form-control" id="edit-supplier-gstin" maxlength="15"></div>
+            <div class="col-md-2"><label class="form-label">Supplier State</label><input type="text" class="form-control" id="edit-supplier-state"></div>
+          </div>
         </form>
         <div id="edit-result" class="mt-3"></div>
       </div>
@@ -335,7 +353,12 @@ function renderTable(){
   document.getElementById('sku-tbody').innerHTML=pageData.map(s=>{
     const cls=classifications[s.sku_id]||{};
     const movBadge=getMovBadge(cls.movement_class);const abcBadge=getABCBadge(cls.abc_class);
-    return `<tr><td><strong>${s.sku_id}</strong></td><td><div style="display:flex;align-items:center;gap:8px"><div style="width:36px;height:36px;background:#F8FAFC;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #E2E8F0;flex-shrink:0"><img src="/static/images/products/${s.sku_id}.png" alt="${s.product_name||''}" style="width:32px;height:32px;object-fit:contain" onerror="this.style.display='none';this.parentElement.innerHTML='<i class=\\'ti ti-package\\' style=\\'font-size:14px;color:#94A3B8\\'></i>'"></div><span>${s.product_name||''}</span></div></td><td>${s.brand||''}</td><td>${(s.category||'').replace(/_/g,' ')}</td><td>₹${(s.unit_price||0).toFixed(2)}</td><td>₹${(s.cost_price||0).toFixed(2)}</td><td>${s.shelf_life_days||'--'} days</td><td>${s.moq_from_supplier||'--'}</td><td>${s.supplier_lead_time_days||'--'} days</td><td>${movBadge}</td><td>${abcBadge}</td><td><button class="btn btn-sm btn-outline-primary me-1" onclick="editSKU('${s.sku_id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-outline-danger" onclick="deleteSKU('${s.sku_id}')"><i class="ti ti-trash"></i></button></td></tr>`;
+    const canEdit = ['owner','manager'].includes(window.userRole);
+    const canDelete = window.userRole === 'owner';
+    const editBtn = canEdit ? `<button class="btn btn-sm btn-outline-primary me-1" onclick="editSKU('${s.sku_id}')" title="Edit"><i class="ti ti-edit"></i></button>` : '';
+    const delBtn = canDelete ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteSKU('${s.sku_id}')" title="Delete"><i class="ti ti-trash"></i></button>` : '';
+    const actions = (canEdit || canDelete) ? (editBtn + delBtn) : '<span class="text-muted" style="font-size:11px">view-only</span>';
+    return `<tr><td><strong>${s.sku_id}</strong></td><td><div style="display:flex;align-items:center;gap:8px">${window.productIconHTML(s, 36)}<span>${s.product_name||''}</span></div></td><td>${s.brand||''}</td><td>${(s.category||'').replace(/_/g,' ')}</td><td>₹${(s.unit_price||0).toFixed(2)}</td><td>₹${(s.cost_price||0).toFixed(2)}</td><td>${s.shelf_life_days||'--'} days</td><td>${s.moq_from_supplier||'--'}</td><td>${s.supplier_lead_time_days||'--'} days</td><td>${movBadge}</td><td>${abcBadge}</td><td>${actions}</td></tr>`;
   }).join('');
   document.getElementById('showing-text').textContent=`Showing ${start+1}–${Math.min(start+PAGE_SIZE,filteredSKUs.length)} of ${filteredSKUs.length} SKUs`;
   renderPagination();
@@ -344,14 +367,14 @@ function getMovBadge(m){const map={fast_mover:'bg-green',slow_mover:'bg-yellow',
 function getABCBadge(a){const map={A:'bg-green',B:'bg-yellow',C:'bg-orange'};return a?`<span class="badge ${map[a]||'bg-secondary'}">${a}</span>`:'';}
 function renderPagination(){const tp=Math.ceil(filteredSKUs.length/PAGE_SIZE);if(tp<=1){document.getElementById('pagination-btns').innerHTML='';return;}let h='<div class="btn-group">';for(let i=1;i<=tp;i++){h+=`<button class="btn btn-sm ${i===currentPage?'btn-primary':'btn-outline-secondary'}" onclick="goPage(${i})">${i}</button>`;}h+='</div>';document.getElementById('pagination-btns').innerHTML=h;}
 function goPage(p){currentPage=p;renderTable();}
-document.getElementById('csv-file')?.addEventListener('change',function(e){const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=function(evt){const lines=evt.target.result.split('\n').filter(l=>l.trim());if(lines.length<2){alert('CSV must have headers and at least 1 data row');return;}const headers=lines[0].split(',').map(h=>h.trim());const rows=lines.slice(1,6).map(l=>l.split(',').map(c=>c.trim()));let table='<table class="table table-sm"><thead><tr>'+headers.map(h=>`<th>${h}</th>`).join('')+'</tr></thead><tbody>';rows.forEach(r=>{table+='<tr>'+r.map(c=>`<td>${c}</td>`).join('')+'</tr>';});table+='</tbody></table>';document.getElementById('csv-preview-table').innerHTML=table;document.getElementById('csv-preview').style.display='block';document.getElementById('csv-result').innerHTML=`<span class="text-muted">${lines.length-1} rows detected</span>`;};reader.readAsText(file);});
+document.getElementById('csv-file')?.addEventListener('change',function(e){const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=function(evt){const lines=evt.target.result.split('\n').filter(l=>l.trim());if(lines.length<2){window.toast('CSV must have headers and at least 1 data row','warn');return;}const headers=lines[0].split(',').map(h=>h.trim());const rows=lines.slice(1,6).map(l=>l.split(',').map(c=>c.trim()));let table='<table class="table table-sm"><thead><tr>'+headers.map(h=>`<th>${h}</th>`).join('')+'</tr></thead><tbody>';rows.forEach(r=>{table+='<tr>'+r.map(c=>`<td>${c}</td>`).join('')+'</tr>';});table+='</tbody></table>';document.getElementById('csv-preview-table').innerHTML=table;document.getElementById('csv-preview').style.display='block';document.getElementById('csv-result').innerHTML=`<span class="text-muted">${lines.length-1} rows detected</span>`;};reader.readAsText(file);});
 function cancelCSV(){document.getElementById('csv-preview').style.display='none';document.getElementById('csv-file').value='';}
 async function submitCSV(){const file=document.getElementById('csv-file').files[0];if(!file)return;const form=new FormData();form.append('file',file);try{const r=await fetch('/api/sku/upload',{method:'POST',body:form});const d=await r.json();document.getElementById('csv-result').innerHTML=d.status==='success'?`<div class="alert alert-success">${d.message}</div>`:`<div class="alert alert-danger">${d.message||'Upload failed'}</div>`;if(d.status==='success'){cancelCSV();loadSKUs();}}catch(e){document.getElementById('csv-result').innerHTML='<div class="alert alert-danger">Upload failed</div>';}}
 async function addSKU(e){e.preventDefault();const data=Object.fromEntries(new FormData(e.target));try{const r=await fetch('/api/sku/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});const d=await r.json();document.getElementById('add-result').innerHTML=d.status==='success'?`<div class="alert alert-success">${d.message}</div>`:`<div class="alert alert-danger">${d.message||'Failed'}</div>`;if(d.status==='success'){e.target.reset();loadSKUs();}}catch(e){document.getElementById('add-result').innerHTML='<div class="alert alert-danger">Failed to add SKU</div>';}}
 // ── Edit SKU ──
 function editSKU(skuId){
   const sku=allSKUs.find(s=>s.sku_id===skuId);
-  if(!sku){alert('SKU not found');return;}
+  if(!sku){window.toast('SKU not found','error');return;}
   document.getElementById('edit-sku-id').value=sku.sku_id;
   document.getElementById('edit-sku-title').textContent=sku.sku_id;
   document.getElementById('edit-product-name').value=sku.product_name||'';
@@ -362,7 +385,11 @@ function editSKU(skuId){
   document.getElementById('edit-shelf-life').value=sku.shelf_life_days||365;
   document.getElementById('edit-moq').value=sku.moq_from_supplier||6;
   document.getElementById('edit-lead-time').value=sku.supplier_lead_time_days||7;
-  document.getElementById('edit-result').innerHTML='';
+  document.getElementById('edit-hsn-code').value=sku.hsn_code||'';
+  document.getElementById('edit-gst-rate').value=sku.gst_rate||'';
+  document.getElementById('edit-supplier-name').value=sku.supplier_name||'';
+  document.getElementById('edit-supplier-gstin').value=sku.supplier_gstin||'';
+  document.getElementById('edit-supplier-state').value=sku.supplier_state||'';
   document.getElementById('edit-result').innerHTML='';
   
   const m=document.getElementById('editSkuModal');
@@ -392,6 +419,7 @@ function hideDeleteModal(){
 }
 
 async function saveEditSKU(){
+  const gstRaw = document.getElementById('edit-gst-rate').value;
   const data={
     sku_id:document.getElementById('edit-sku-id').value,
     product_name:document.getElementById('edit-product-name').value.trim(),
@@ -401,15 +429,20 @@ async function saveEditSKU(){
     cost_price:parseFloat(document.getElementById('edit-cost-price').value)||0,
     shelf_life_days:parseInt(document.getElementById('edit-shelf-life').value)||365,
     moq_from_supplier:parseInt(document.getElementById('edit-moq').value)||6,
-    supplier_lead_time_days:parseInt(document.getElementById('edit-lead-time').value)||7
+    supplier_lead_time_days:parseInt(document.getElementById('edit-lead-time').value)||7,
+    hsn_code:document.getElementById('edit-hsn-code').value.trim(),
+    gst_rate:gstRaw === '' ? '' : parseFloat(gstRaw),
+    supplier_name:document.getElementById('edit-supplier-name').value.trim(),
+    supplier_gstin:document.getElementById('edit-supplier-gstin').value.trim(),
+    supplier_state:document.getElementById('edit-supplier-state').value.trim()
   };
   try{
     const r=await fetch('/api/sku/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
     const d=await r.json();
     if(d.status==='success'){
-      document.getElementById('edit-result').innerHTML=`<div class="alert alert-success"><i class="ti ti-check me-1"></i>${d.message}</div>`;
+      window.toast(d.message,'success');
       loadSKUs();
-      setTimeout(hideEditModal, 1000);
+      hideEditModal();
     }else{
       document.getElementById('edit-result').innerHTML=`<div class="alert alert-danger">${d.message||'Update failed'}</div>`;
     }
@@ -436,22 +469,35 @@ document.getElementById('confirm-delete-btn')?.addEventListener('click',async fu
     const d=await r.json();
     hideDeleteModal();
     if(d.status==='success'){
+      window.toast('SKU deleted','success');
       loadSKUs();
-    }else{alert(d.message||'Delete failed');}
-  }catch(e){alert('Delete failed');}
+    }else{window.toast(d.message||'Delete failed','error');}
+  }catch(e){window.toast('Delete failed','error');}
   this.disabled=false;
   pendingDeleteId=null;
 });
 loadSKUs();
 
 // ── Barcode Tab: QR Code Generation ──
-function initBarcodeTab(){
+// Two payloads the QR can carry:
+//   - Browser PWA: a URL like http://host:port/mobile/
+//   - Native Android (Ledgr Scanner): a JSON {server_url, name}
+// We default to the JSON payload — the Android app accepts both and the
+// browser PWA gets a small "Open in browser" link below the QR.
+async function initBarcodeTab(){
   const host=window.location.hostname;
   const port=window.location.port;
-  const scannerUrl=`http://${host}:${port}/mobile/`;
-  document.getElementById('scanner-url').textContent=scannerUrl;
-  // Generate QR code using canvas
-  generateQRCode(scannerUrl);
+  const browserUrl=`http://${host}:${port}/mobile/`;
+  let pairing = null;
+  try {
+    const r = await fetch('/api/qr-pairing');
+    if (r.ok) pairing = await r.json();
+  } catch(e) { /* fallthrough to URL form */ }
+  const qrPayload = pairing
+    ? JSON.stringify({server_url: pairing.server_url, name: pairing.name})
+    : browserUrl;
+  document.getElementById('scanner-url').textContent = browserUrl;
+  generateQRCode(qrPayload);
 }
 
 function generateQRCode(url){
@@ -473,7 +519,7 @@ function generateQRCode(url){
 let lastLookupData=null;
 async function lookupBarcode(){
   const barcode=document.getElementById('barcode-input').value.trim();
-  if(!barcode){alert('Enter a barcode number');return;}
+  if(!barcode){window.toast('Enter a barcode number','warn');return;}
   const btn=document.getElementById('btn-lookup');
   btn.disabled=true;btn.innerHTML='<i class="ti ti-loader me-1"></i>Looking up...';
   try{
@@ -535,7 +581,7 @@ async function addSKUFromBarcode(){
     moq_from_supplier:6,
     supplier_lead_time_days:7
   };
-  if(!data.sku_code||!data.product_name){alert('SKU code and product name are required');return;}
+  if(!data.sku_code||!data.product_name){window.toast('SKU code and product name are required','warn');return;}
   const btn=document.getElementById('btn-add-barcode');
   btn.disabled=true;
   try{

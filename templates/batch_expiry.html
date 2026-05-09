@@ -53,8 +53,20 @@
 <script>
 let allBatches=[];
 async function loadBatches(){
-  allBatches=await(await fetch('/api/batch-expiry')).json();
-  if(allBatches.error){document.getElementById('alert-area').innerHTML='<div class="alert alert-warning">'+allBatches.error+'</div>';return;}
+  try { allBatches = await (await fetch('/api/batch-expiry')).json(); } catch(e) { allBatches = []; }
+  if (allBatches && allBatches.error) {
+    document.getElementById('alert-area').innerHTML = '<div class="alert alert-warning">' + allBatches.error + '</div>';
+    return;
+  }
+  if (!Array.isArray(allBatches) || !allBatches.length) {
+    document.getElementById('alert-area').innerHTML =
+      '<div class="alert alert-info"><i class="ti ti-info-circle me-2"></i>No batch records yet. Batches are created via barcode scans, CSV upload, or seeded from inventory at first run.</div>';
+    ['kpi-total','kpi-critical','kpi-warning','kpi-ok'].forEach(id => document.getElementById(id).textContent = '0');
+    document.getElementById('chart-expiry').innerHTML = '';
+    document.getElementById('chart-category').innerHTML = '';
+    document.getElementById('batch-tbody').innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:#94A3B8">No batches</td></tr>';
+    return;
+  }
   const critical=allBatches.filter(b=>b.status==='critical'||b.status==='expired');
   const warning=allBatches.filter(b=>b.status==='warning');
   const ok=allBatches.filter(b=>b.status==='ok');
@@ -89,10 +101,11 @@ function renderTable(data){
       b.status==='critical'?'<span class="badge bg-red">CRITICAL</span>':
       b.status==='warning'?'<span class="badge bg-yellow">WARNING</span>':'<span class="badge bg-green">OK</span>';
     const daysColor=b.days_to_expiry<14?'text-danger fw-bold':b.days_to_expiry<30?'text-warning fw-bold':'text-success';
+    const daysText = b.days_to_expiry < 0 ? `${Math.abs(b.days_to_expiry)}d overdue` : `${b.days_to_expiry}d`;
     return `<tr><td><strong>${b.sku_id}</strong></td><td>${b.product_name||''}</td><td>${b.batch_no}</td>
       <td><span class="badge bg-blue-lt">${(b.category||'').replace(/_/g,' ')}</span></td>
       <td>${b.qty}</td><td>${b.mfd_date}</td><td>${b.expiry_date}</td>
-      <td class="${daysColor}">${b.days_to_expiry}d</td><td>${statusBadge}</td></tr>`;
+      <td class="${daysColor}">${daysText}</td><td>${statusBadge}</td></tr>`;
   }).join('');
 }
 function filterBatch(status,btn){

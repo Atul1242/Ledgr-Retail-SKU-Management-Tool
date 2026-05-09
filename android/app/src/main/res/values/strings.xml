@@ -1,0 +1,43 @@
+<resources>
+    <string name="app_name">Ledgr Scanner</string>
+    <string name="app_tagline">Industrial barcode scanning · synced to your Ledgr server</string>
+
+    <!-- Pairing -->
+    <string name="pair_title">Pair this device</string>
+    <string name="pair_subtitle">Open Ledgr → SKU Management → Add via Barcode and scan the QR code shown there.</string>
+    <string name="pair_action_scan">Scan pairing QR</string>
+    <string name="pair_action_manual">Enter server URL manually</string>
+    <string name="pair_invalid">Could not read QR. Expecting a Ledgr server URL.</string>
+    <string name="pair_paired_to">Paired to</string>
+    <string name="pair_unpair">Unpair</string>
+
+    <!-- Login -->
+    <string name="login_title">Sign in</string>
+    <string name="login_subtitle">Use your Ledgr salesman account.</string>
+    <string name="email">Email</string>
+    <string name="password">Password</string>
+    <string name="sign_in">Sign in</string>
+    <string name="sign_in_failed">Sign in failed. Check credentials and server reachability.</string>
+    <string name="logout">Sign out</string>
+
+    <!-- Scanner -->
+    <string name="scanner_title">Retail scanner</string>
+    <string name="scanner_hint">Hold steady, frame the barcode within the box.</string>
+    <string name="grant_camera">Allow camera access</string>
+    <string name="grant_camera_rationale">Camera access is required to scan retail barcodes.</string>
+    <string name="qty_received">Quantity received</string>
+    <string name="confirm_save">Confirm &amp; save</string>
+    <string name="discard">Discard</string>
+
+    <!-- Status -->
+    <string name="online">Online</string>
+    <string name="offline">Offline — queued locally</string>
+    <string name="queued_count">%1$d queued</string>
+    <string name="sync_now">Sync now</string>
+    <string name="synced_n">Synced %1$d scans</string>
+    <string name="sync_failed">Sync failed. We will retry automatically when online.</string>
+
+    <!-- History -->
+    <string name="history_title">Recent scans</string>
+    <string name="history_empty">No scans yet. Frame a barcode to begin.</string>
+</resources>

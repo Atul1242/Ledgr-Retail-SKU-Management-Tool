@@ -28,7 +28,7 @@
   <div class="card-header"><h3 class="card-title"><i class="ti ti-report-analytics me-2"></i>Supplier Scorecard</h3></div>
   <div class="table-responsive">
     <table class="table table-vcenter table-hover card-table">
-      <thead><tr><th>Supplier / Brand</th><th>SKU Count</th><th>Avg Lead Time</th><th>Min Lead Time</th><th>Max Lead Time</th><th>Avg MOQ</th><th>Rating</th></tr></thead>
+      <thead><tr><th>Supplier / Brand</th><th>SKU Count</th><th>Avg LT</th><th>Min</th><th>Max</th><th>Variance</th><th>Avg MOQ</th><th>Rating</th></tr></thead>
       <tbody id="supplier-tbody"></tbody>
     </table>
   </div>
@@ -46,22 +46,69 @@
 <script>
 let supplierData={};
 async function loadSupplierPerformance(){
-  const r=await fetch('/api/supplier-performance');const d=await r.json();supplierData=d;
-  document.getElementById('kpi-avg-lt').textContent=(d.avg_lead_time||0).toFixed(1);
-  document.getElementById('kpi-p80-lt').textContent=(d.p80_lead_time||0).toFixed(1);
-  document.getElementById('kpi-festive-lt').textContent=(d.festive_avg_lead_time||0).toFixed(1);
-  document.getElementById('kpi-suppliers').textContent=d.supplier_count||0;
-  const suppliers=d.suppliers||[];
+  let d;
+  try { d = await (await fetch('/api/supplier-performance')).json(); } catch(e){ d = {}; }
+  supplierData = d;
+  const suppliers = d.suppliers || [];
+  document.getElementById('kpi-avg-lt').textContent = (d.avg_lead_time || 0).toFixed(1);
+  document.getElementById('kpi-p80-lt').textContent = (d.p80_lead_time || 0).toFixed(1);
+  document.getElementById('kpi-festive-lt').textContent = (d.festive_avg_lead_time || 0).toFixed(1);
+  document.getElementById('kpi-suppliers').textContent = d.supplier_count || 0;
 
-  document.getElementById('chart-lt-supplier').innerHTML='';
-  new ApexCharts(document.getElementById('chart-lt-supplier'),{chart:{type:'bar',height:300,toolbar:{show:false}},series:[{name:'Avg Lead Time',data:suppliers.map(s=>s.avg_lt)},{name:'Max Lead Time',data:suppliers.map(s=>s.max_lt)}],xaxis:{categories:suppliers.map(s=>s.name.substring(0,18)),labels:{style:{fontSize:'10px'},rotate:-45}},colors:['#206bc4','#d63939'],plotOptions:{bar:{borderRadius:4,columnWidth:'60%'}},grid:{borderColor:'#e6e7e9'},legend:{position:'top'}}).render();
+  if (!suppliers.length) {
+    const empty = '<div style="text-align:center;padding:40px;color:#94A3B8"><i class="ti ti-truck" style="font-size:32px;display:block;margin-bottom:8px"></i>No supplier data yet. Lead times accumulate as POs are placed and received.</div>';
+    document.getElementById('chart-lt-supplier').innerHTML = empty;
+    document.getElementById('chart-festive-compare').innerHTML = empty;
+    document.getElementById('supplier-tbody').innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:#94A3B8">No suppliers tracked yet.</td></tr>';
+    document.getElementById('chart-sku-lt').innerHTML = empty;
+    return;
+  }
 
-  document.getElementById('chart-festive-compare').innerHTML='';
-  new ApexCharts(document.getElementById('chart-festive-compare'),{chart:{type:'bar',height:300,toolbar:{show:false}},series:[{name:'Normal Period',data:suppliers.map(s=>s.avg_lt)},{name:'Festive (Est.)',data:suppliers.map(s=>Math.round(s.avg_lt*1.3*10)/10)}],xaxis:{categories:suppliers.map(s=>s.name.substring(0,12)),labels:{style:{fontSize:'10px'}}},colors:['#2fb344','#f76707'],plotOptions:{bar:{borderRadius:4,columnWidth:'55%'}},grid:{borderColor:'#e6e7e9'},legend:{position:'top'}}).render();
+  document.getElementById('chart-lt-supplier').innerHTML = '';
+  new ApexCharts(document.getElementById('chart-lt-supplier'), {
+    chart:{type:'bar', height:300, toolbar:{show:false}},
+    series:[
+      {name:'Avg Lead Time', data: suppliers.map(s=>s.avg_lt)},
+      {name:'Max Lead Time', data: suppliers.map(s=>s.max_lt)}
+    ],
+    xaxis:{categories: suppliers.map(s=>s.name.substring(0,18)), labels:{style:{fontSize:'10px'}, rotate:-45}},
+    colors:['#206bc4', '#d63939'],
+    plotOptions:{bar:{borderRadius:4, columnWidth:'60%'}},
+    grid:{borderColor:'#e6e7e9'}, legend:{position:'top'}
+  }).render();
 
-  document.getElementById('supplier-tbody').innerHTML=suppliers.map(s=>{
-    const rating=s.avg_lt<=3?'<span class="badge bg-green">Excellent</span>':s.avg_lt<=5?'<span class="badge bg-blue">Good</span>':s.avg_lt<=7?'<span class="badge bg-yellow">Average</span>':'<span class="badge bg-red">Slow</span>';
-    return `<tr><td><strong>${s.name}</strong></td><td>${s.sku_count}</td><td>${s.avg_lt.toFixed(1)} days</td><td>${s.min_lt} days</td><td>${s.max_lt} days</td><td>${s.avg_moq}</td><td>${rating}</td></tr>`;
+  // Festive vs normal: use the API's calculated festive_avg as a single overlay,
+  // not a per-supplier multiplied estimate (which was misleading).
+  document.getElementById('chart-festive-compare').innerHTML = '';
+  new ApexCharts(document.getElementById('chart-festive-compare'), {
+    chart:{type:'bar', height:300, toolbar:{show:false}},
+    series:[{name:'Lead Time (days)', data:[d.avg_lead_time, d.p80_lead_time, d.festive_avg_lead_time]}],
+    xaxis:{categories:['Normal avg', 'P80 (worst-case)', 'Festive (Oct-Nov)']},
+    colors:['#2fb344', '#f59f00', '#d63939'],
+    plotOptions:{bar:{borderRadius:4, columnWidth:'45%', distributed:true}},
+    dataLabels:{enabled:true, formatter: v => v + 'd'},
+    grid:{borderColor:'#e6e7e9'}, legend:{show:false}
+  }).render();
+
+  document.getElementById('supplier-tbody').innerHTML = suppliers.map(s => {
+    const variance = (s.max_lt || 0) - (s.min_lt || 0);
+    const variancePill = variance <= 2 ? '<span class="badge bg-green-lt">Tight</span>'
+      : variance <= 5 ? '<span class="badge bg-yellow-lt">Moderate</span>'
+      : '<span class="badge bg-red-lt">Volatile</span>';
+    const rating = s.avg_lt <= 3 ? '<span class="badge bg-green">Excellent</span>'
+      : s.avg_lt <= 5 ? '<span class="badge bg-blue">Good</span>'
+      : s.avg_lt <= 7 ? '<span class="badge bg-yellow">Average</span>'
+      : '<span class="badge bg-red">Slow</span>';
+    return `<tr>
+      <td><strong>${s.name}</strong></td>
+      <td>${s.sku_count}</td>
+      <td>${s.avg_lt.toFixed(1)}d</td>
+      <td>${s.min_lt}d</td>
+      <td>${s.max_lt}d</td>
+      <td>${variance}d ${variancePill}</td>
+      <td>${s.avg_moq}</td>
+      <td>${rating}</td>
+    </tr>`;
   }).join('');
 
   const sel=document.getElementById('supplier-filter');

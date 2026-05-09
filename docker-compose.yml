@@ -1,46 +1,91 @@
+# Ledgr — full stack: Postgres + Flask web (gunicorn) + APScheduler worker.
+# Designed to work straight out of a fresh GitHub clone:
+#   docker compose up                # or: docker-compose up
+# Then visit http://localhost:5000  (owner@sunrise.com / sunrise2024)
+#
+# Configuration: every variable below resolves via ${VAR:-default}. If a
+# .env file exists at this directory, Compose loads it automatically for
+# variable interpolation. No env file is REQUIRED — defaults work.
+
 version: "3.9"
 
 services:
-  web:
-    build: .
-    ports:
-      - "5000:5000"
-    depends_on:
-      - db
-    volumes:
-      - ./data:/app/data
-    env_file:
-      - .env
-    environment:
-      - DATABASE_URL=postgresql://sunrise:sunrise_secure@db:5432/sunrise_db
-    restart: unless-stopped
-
   db:
     image: postgres:15-alpine
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-ledgr}
+      POSTGRES_USER:     ${POSTGRES_USER:-ledgr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ledgr_local_dev}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    environment:
-      POSTGRES_DB: sunrise_db
-      POSTGRES_USER: sunrise
-      POSTGRES_PASSWORD: sunrise_secure
-    # Only expose internally — not to host
     expose:
       - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ledgr} -d ${POSTGRES_DB:-ledgr}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  web:
+    build: .
+    image: ledgr:latest
+    ports:
+      - "${WEB_PORT:-5000}:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Persist pipeline outputs / uploads / logs across restarts.
+      - pipeline_data:/app/data/processed
+      - uploads:/app/data/uploads
+      - logs:/app/logs
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ledgr}:${POSTGRES_PASSWORD:-ledgr_local_dev}@db:5432/${POSTGRES_DB:-ledgr}
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-ledgr-local-dev-secret-change-in-prod}
+      FLASK_ENV: ${FLASK_ENV:-development}
+      OPENROUTER_KEY: ${OPENROUTER_KEY:-}
+      # Tell the QR-pairing endpoint the host's LAN IP so the Android scanner
+      # gets a phone-reachable URL (the container can't auto-detect this).
+      # Pass via: LEDGR_PUBLIC_HOST=$(hostname -I | awk '{print $1}') docker compose up
+      LEDGR_PUBLIC_HOST: ${LEDGR_PUBLIC_HOST:-}
+      HIDE_DEMO_CREDENTIALS: ${HIDE_DEMO_CREDENTIALS:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
+      OWNER_WHATSAPP_TO: ${OWNER_WHATSAPP_TO:-}
+      MAIL_SERVER: ${MAIL_SERVER:-}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      OWNER_EMAIL: ${OWNER_EMAIL:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     restart: unless-stopped
 
   scheduler:
+    image: ledgr:latest
     build: .
-    command: python scheduler.py
+    # Override CMD to run the APScheduler loop instead of gunicorn.
+    command: ["python", "scheduler.py"]
     depends_on:
-      - db
-      - web
+      db:
+        condition: service_healthy
+      web:
+        condition: service_healthy
     volumes:
-      - ./data:/app/data
-    env_file:
-      - .env
+      - pipeline_data:/app/data/processed
+      - uploads:/app/data/uploads
+      - logs:/app/logs
     environment:
-      - DATABASE_URL=postgresql://sunrise:sunrise_secure@db:5432/sunrise_db
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ledgr}:${POSTGRES_PASSWORD:-ledgr_local_dev}@db:5432/${POSTGRES_DB:-ledgr}
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-ledgr-local-dev-secret-change-in-prod}
+      FLASK_ENV: ${FLASK_ENV:-development}
+      OPENROUTER_KEY: ${OPENROUTER_KEY:-}
     restart: unless-stopped
 
 volumes:
   pgdata:
+  pipeline_data:
+  uploads:
+  logs:

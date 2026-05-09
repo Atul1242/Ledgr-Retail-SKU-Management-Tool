@@ -15,14 +15,30 @@ class NpEncoder(json.JSONEncoder):
 def get_project_root():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+def _resolve_report_date(processed_dir):
+    """Anchor the Monday report date to the first forecast week, so the
+    delivery dates and projections shown in the report agree with the
+    forecast horizon (Brief A7 fix)."""
+    fc_path = os.path.join(processed_dir, "forecasts.csv")
+    if os.path.exists(fc_path):
+        try:
+            fc = pd.read_csv(fc_path)
+            if "week_start_date" in fc.columns and len(fc) > 0:
+                return pd.to_datetime(fc["week_start_date"]).min().to_pydatetime()
+        except Exception:
+            pass
+    return datetime.now()
+
 def run():
     root = get_project_root()
     processed_dir = os.path.join(root, "data", "processed")
     print("[6_report] Generating Monday morning report...")
     reorder = pd.read_csv(os.path.join(processed_dir, "reorder_recommendations.csv"))
     sku_class = pd.read_csv(os.path.join(processed_dir, "sku_classification.csv"))
+    report_anchor = _resolve_report_date(processed_dir)
     stockout_alerts = reorder[reorder["flags"].str.contains("STOCKOUT_RISK", na=False)]
     overstock_alerts = reorder[reorder["flags"].str.contains("OVERSTOCK_RISK", na=False)]
+    expiry_alerts_df = reorder[reorder["flags"].str.contains("EXPIRY_ALERT", na=False)]
     to_reorder = reorder[reorder["final_reorder_qty"] > 0]
 
     # Business impact metrics from reorder data
@@ -56,6 +72,22 @@ def run():
             "capital_trapped": int(r.get("overstock_value", 0))
         })
 
+    expiry_list = []
+    for _, r in expiry_alerts_df.iterrows():
+        try:
+            dte = int(r.get("days_to_earliest_expiry", 0)) if str(r.get("days_to_earliest_expiry", "")).strip() != "" else None
+        except Exception:
+            dte = None
+        expiry_list.append({
+            "sku_id": r["sku_id"], "product_name": r["product_name"],
+            "category": r["category"],
+            "available_stock": int(r["available_stock"]),
+            "forecast_6w": int(r["forecast_6w_total"]),
+            "earliest_expiry_date": r.get("earliest_expiry_date", ""),
+            "days_to_expiry": dte,
+            "recommended_action": "Run markdown / promotion to clear stock before expiry"
+        })
+
     full_reorder = []
     for _, r in to_reorder.iterrows():
         full_reorder.append({
@@ -66,8 +98,9 @@ def run():
         })
 
     report = {
-        "report_date": datetime.now().strftime("%Y-%m-%d"),
+        "report_date": report_anchor.strftime("%Y-%m-%d"),
         "generated_at": datetime.now().strftime("%I:%M %p IST"),
+        "data_anchor_note": f"Stockout/delivery dates anchored to forecast horizon ({report_anchor.date()}). System time: {datetime.now().date()}.",
         "executive_summary": {
             "total_skus_to_reorder": int(len(to_reorder)),
             "total_order_value_inr": int(to_reorder["order_value_inr"].sum()),
@@ -79,9 +112,11 @@ def run():
             "shelf_life_violations": int(shelf_violations),
             "total_skus_analyzed": int(len(reorder)),
             "dead_stock_count": int(reorder["flags"].str.contains("DEAD_STOCK", na=False).sum()),
+            "expiry_alert_count": int(len(expiry_list)),
         },
         "urgent_orders": urgent_list,
         "overstock_alerts": overstock_list,
+        "expiry_alerts": expiry_list,
         "full_reorder_list": full_reorder,
     }
 
@@ -97,6 +132,7 @@ def run():
     print(f"  Overstock risk: {es['skus_at_overstock_risk']}")
     print(f"  Capital trapped: Rs.{es['capital_trapped_in_overstock_inr']:,}")
     print(f"  Shelf life violations: {es['shelf_life_violations']} [OK]")
+    print(f"  Expiry alerts: {es['expiry_alert_count']}")
     return True
 
 if __name__ == "__main__":

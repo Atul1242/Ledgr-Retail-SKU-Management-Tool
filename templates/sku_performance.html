@@ -135,37 +135,41 @@ async function loadSKUData() {
         totalSales += s.units_sold;
       });
     } else {
-      // Mock data if none exists
-      let d = new Date();
-      for(let i=30; i>=0; i--) {
-        let x = new Date(d);
-        x.setDate(x.getDate() - i);
-        dates.push(x.toISOString().split('T')[0]);
-        let vol = Math.floor(Math.random() * 50) + 10;
-        sales.push(vol);
-        totalSales += vol;
-      }
+      // Empty state — no random fallback, just show "no data".
+      document.getElementById('sk-sold').textContent = '0';
+      document.getElementById('sk-stock').textContent = '—';
+      document.querySelector('#performance-chart').innerHTML =
+        '<div style="text-align:center;padding:60px;color:#94A3B8"><i class="ti ti-chart-line" style="font-size:32px;display:block;margin-bottom:8px"></i>No sales history available for this SKU.</div>';
+      return;
     }
-    
+
     document.getElementById('sk-sold').textContent = totalSales.toLocaleString('en-IN');
-    document.getElementById('sk-stock').textContent = sku.current_stock || Math.floor(Math.random()*100)+50;
-    
-    // Generate Forecast Data (Mock future prediction based on moving average)
+
+    // Pull real 6-week forecast from /api/forecasts and stitch it onto the actuals
     let forecast = new Array(sales.length).fill(null);
     forecast[sales.length - 1] = sales[sales.length - 1]; // connect the line
-    let lastVal = sales[sales.length - 1];
-    
-    for(let i=1; i<=14; i++) {
-       let x = new Date(dates[dates.length-1]);
-       x.setDate(x.getDate() + 1);
-       dates.push(x.toISOString().split('T')[0]);
-       sales.push(null);
-       // Add some seasonal noise to forecast
-       let fluc = lastVal * (1 + (Math.random() * 0.2 - 0.1));
-       forecast.push(Math.round(fluc));
-       lastVal = fluc;
+
+    try {
+      const fr = await fetch('/api/forecasts?sku=' + encodeURIComponent(skuId)).then(r=>r.json());
+      (fr || []).forEach(f => {
+        dates.push(f.week_start_date);
+        sales.push(null);
+        forecast.push(f.forecasted_units);
+      });
+    } catch (e) {
+      // Forecast endpoint failed — chart will just show actuals.
     }
-    
+
+    // Pull current stock from reorder recommendations
+    try {
+      const rd = await fetch('/api/reorder-recommendations').then(r=>r.json());
+      const row = (rd || []).find(x => x.sku_id === skuId);
+      document.getElementById('sk-stock').textContent =
+        row ? (row.available_stock || 0).toLocaleString('en-IN') : '—';
+    } catch (e) {
+      document.getElementById('sk-stock').textContent = '—';
+    }
+
     renderChart(dates, sales, forecast);
     
   } catch (err) {

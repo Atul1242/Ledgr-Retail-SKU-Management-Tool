@@ -208,10 +208,20 @@ def run():
     supermarket_mask = still_mid & (merged["row_classification"] == "unclassified") & merged["_outlet_channel"].isin(["supermarket", "modern_trade"])
     merged.loc[supermarket_mask, "row_classification"] = "true_zero"
 
-    # Medical channel: healthcare/pharmaceutical → true_zero, others → missing_data
+    # Medical channel: pharma/healthcare-adjacent categories → true_zero, others → missing_data.
+    # The brief lists pharmaceutical/healthcare but this dataset contains
+    # personal_care/household/packaged_food. Personal-care SKUs (soap, shampoo
+    # etc.) are routinely stocked at pharmacy counters in India, so we treat
+    # personal_care as healthcare-adjacent here. The list is configurable via
+    # MEDICAL_CHANNEL_CATEGORIES env var (comma-separated).
+    _med_cats = os.environ.get(
+        "MEDICAL_CHANNEL_CATEGORIES",
+        "pharmaceutical,healthcare,personal_care"
+    ).split(",")
+    _med_cats = [c.strip() for c in _med_cats if c.strip()]
     medical_mask = still_mid & (merged["row_classification"] == "unclassified") & (merged["_outlet_channel"] == "medical")
-    medical_healthcare = medical_mask & merged["_sku_category"].isin(["pharmaceutical", "healthcare"])
-    medical_other = medical_mask & ~merged["_sku_category"].isin(["pharmaceutical", "healthcare"])
+    medical_healthcare = medical_mask & merged["_sku_category"].isin(_med_cats)
+    medical_other = medical_mask & ~merged["_sku_category"].isin(_med_cats)
     merged.loc[medical_healthcare, "row_classification"] = "true_zero"
     merged.loc[medical_other, "row_classification"] = "missing_data"
 

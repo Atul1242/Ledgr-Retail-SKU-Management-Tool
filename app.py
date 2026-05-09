@@ -10,13 +10,24 @@ import requests as http_requests
 from flask import Flask, render_template, jsonify, request, send_file
 from flask_login import login_required, current_user
 
+# Load .env so OPENROUTER_KEY / TWILIO / MAIL / etc. surface as os.environ.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"), override=False)
+except Exception:
+    pass
+
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "sunrise-dev-key-change-in-prod")
+if app.secret_key == "sunrise-dev-key-change-in-prod" and os.environ.get("FLASK_ENV") == "production":
+    raise RuntimeError("FLASK_SECRET_KEY must be set in production (refusing to start with default key)")
 
-# Auth integration (Brief Part 2B)
-from auth import auth_bp, init_auth
+# Auth integration (Brief Part 2B) — register blueprint BEFORE init_csrf so
+# the login route is in the view_functions registry when CSRF check runs.
+from auth import auth_bp, init_auth, init_csrf, role_required
 app.register_blueprint(auth_bp)
 init_auth(app)
+init_csrf(app)
 
 # Database integration (Brief Phase 1 — PostgreSQL)
 from database import init_db, db
@@ -155,7 +166,8 @@ def api_sku_class():
 @login_required
 def api_sku_list():
     from database import get_sku_list
-    return jsonify(get_sku_list())
+    from auth import get_user_store_ids
+    return jsonify(get_sku_list(store_ids=get_user_store_ids()))
 
 @app.route("/api/sku-sales/<sku_id>")
 @login_required
@@ -175,38 +187,50 @@ def api_sku_sales(sku_id):
 def api_class_report():
     return jsonify(load_json("classification_report.json"))
 
-pipeline_status = {"running": False, "status": "idle", "error": None}
-
 @app.route("/api/run-pipeline", methods=["POST"])
 @login_required
+@role_required("owner", "manager")
 def api_run_pipeline():
-    """Run pipeline asynchronously (Brief Phase 7 — async fix)."""
-    if pipeline_status["running"]:
+    """Run pipeline asynchronously, persisting progress to pipeline_runs
+    (Brief Phase 7 — DB-backed status survives Gunicorn worker hops)."""
+    from database import start_pipeline_run, update_pipeline_step, finish_pipeline_run, get_latest_pipeline_run
+    latest = get_latest_pipeline_run()
+    if latest.get("running"):
         return jsonify({"status": "already_running", "message": "Pipeline is already running"})
 
-    def run_async():
-        pipeline_status["running"] = True
-        pipeline_status["status"] = "running"
-        pipeline_status["error"] = None
-        try:
-            sys.path.insert(0, ROOT)
-            from pipeline import run_pipeline
-            results = run_pipeline()
-            pipeline_status["status"] = "success"
-        except Exception as e:
-            pipeline_status["status"] = "error"
-            pipeline_status["error"] = str(e)
-        finally:
-            pipeline_status["running"] = False
+    run_id = start_pipeline_run()
+    captured_app = app
 
-    t = threading.Thread(target=run_async, daemon=True)
+    def run_async(rid):
+        with captured_app.app_context():
+            try:
+                sys.path.insert(0, ROOT)
+                from pipeline import run_pipeline
+
+                def cb(step_idx, step_name):
+                    try:
+                        with captured_app.app_context():
+                            update_pipeline_step(rid, step_idx)
+                    except Exception:
+                        pass
+
+                run_pipeline(progress_cb=cb)
+                finish_pipeline_run(rid, success=True)
+            except Exception as e:
+                try:
+                    finish_pipeline_run(rid, success=False, error_message=str(e))
+                except Exception:
+                    pass
+
+    t = threading.Thread(target=run_async, args=(run_id,), daemon=True)
     t.start()
-    return jsonify({"status": "started", "message": "Pipeline started in background"})
+    return jsonify({"status": "started", "run_id": run_id, "message": "Pipeline started in background"})
 
 @app.route("/api/pipeline-status")
 @login_required
 def api_pipeline_status():
-    return jsonify(pipeline_status)
+    from database import get_latest_pipeline_run
+    return jsonify(get_latest_pipeline_run())
 
 @app.route("/api/download-reorder")
 @login_required
@@ -220,34 +244,51 @@ def download_reorder():
 @app.route("/api/sku-list-full")
 @login_required
 def api_sku_list_full():
-    """Full SKU master data for the management table."""
-    df = load_csv("sku_master.csv", DATA)
-    return jsonify(df.to_dict(orient="records"))
+    """Full SKU master data for the management table (DB-backed, Brief C8)."""
+    try:
+        from database import get_sku_list_full
+        from auth import get_user_store_ids
+        return jsonify(get_sku_list_full(store_ids=get_user_store_ids()))
+    except Exception as e:
+        # Fall back to CSV only if DB not available (e.g. tests)
+        df = load_csv("sku_master.csv", DATA)
+        return jsonify(df.to_dict(orient="records"))
 
 @app.route("/api/sku/create", methods=["POST"])
 @login_required
+@role_required("owner", "manager")
 def api_sku_create():
-    """Add a new SKU to the database (Phase 1 fix)."""
+    """Add a new SKU to the database (Phase 1 fix). Scoped to the user's
+    primary store (first in their store list)."""
     try:
         from database import create_sku
-        ok, msg = create_sku(request.json)
+        from auth import get_user_store_ids
+        stores = get_user_store_ids() or []
+        store_id = stores[0] if stores else None
+        if not store_id:
+            return jsonify({"status": "error", "message": "User has no store assignment"}), 403
+        ok, msg = create_sku(request.json, store_id=store_id)
         return jsonify({"status": "success" if ok else "error", "message": msg})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
 @app.route("/api/sku/delete", methods=["POST"])
 @login_required
+@role_required("owner")
 def api_sku_delete():
-    """Delete a SKU from the database (Phase 1 fix)."""
+    """Delete a SKU from the database (Phase 1 fix), scoped to the user's stores."""
     try:
         from database import delete_sku
-        ok, msg = delete_sku(request.json.get("sku_id", "").strip())
+        from auth import get_user_store_ids
+        ok, msg = delete_sku(request.json.get("sku_id", "").strip(),
+                             store_ids=get_user_store_ids())
         return jsonify({"status": "success" if ok else "error", "message": msg})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
 @app.route("/api/sku/upload", methods=["POST"])
 @login_required
+@role_required("owner", "manager")
 def api_sku_upload():
     """Upload CSV to add/update SKUs."""
     try:
@@ -271,6 +312,108 @@ def api_sku_upload():
         return jsonify({"status": "error", "message": str(e)})
 
 # ── Data Quality API (Brief Part 5A) ──
+@app.route("/api/outlet-sales/<outlet_id>")
+@login_required
+def api_outlet_sales(outlet_id):
+    """Per-outlet weekly sales aggregate, used by the outlets detail panel."""
+    sales = load_csv("sales_classified.csv")
+    if len(sales) == 0:
+        return jsonify([])
+    sales["week_start_date"] = pd.to_datetime(sales["week_start_date"])
+    df = sales[sales["outlet_id"] == outlet_id].groupby("week_start_date")["units_sold"].sum().reset_index()
+    df = df.sort_values("week_start_date")
+    df["week_start_date"] = df["week_start_date"].dt.strftime("%Y-%m-%d")
+    return jsonify(df.to_dict(orient="records"))
+
+
+@app.route("/api/outlets")
+@login_required
+def api_outlets():
+    """Outlets list scoped to user's stores. Replaces the hardcoded 10-row
+    array that was in outlets.html."""
+    try:
+        from database import get_outlet_list
+        from auth import get_user_store_ids
+        outlets = get_outlet_list(store_ids=get_user_store_ids())
+        # Augment with sales volume from the classified pipeline output, when available.
+        sales_path = os.path.join(PROCESSED, "sales_classified.csv")
+        sales_by_outlet = {}
+        if os.path.exists(sales_path):
+            try:
+                df = pd.read_csv(sales_path, usecols=["outlet_id", "units_sold", "week_start_date"])
+                df["week_start_date"] = pd.to_datetime(df["week_start_date"], errors="coerce")
+                last8 = df["week_start_date"].max() - pd.Timedelta(weeks=8)
+                recent = df[df["week_start_date"] >= last8]
+                sales_by_outlet = recent.groupby("outlet_id")["units_sold"].sum().to_dict()
+            except Exception:
+                sales_by_outlet = {}
+        for o in outlets:
+            o["weekly_units"] = int(sales_by_outlet.get(o["outlet_id"], 0) // 8) if o["outlet_id"] in sales_by_outlet else 0
+        return jsonify(outlets)
+    except Exception as e:
+        return jsonify({"error": str(e), "outlets": []})
+
+
+@app.route("/api/dashboard-summary")
+@login_required
+def api_dashboard_summary():
+    """One-shot endpoint for the Dashboard page — saves 3 requests and lets
+    overview.html drop its hardcoded fallbacks. Returns executive summary,
+    pipeline run status, alert counts, and a real WhatsApp send history."""
+    try:
+        from database import get_latest_pipeline_run
+        from auth import get_user_store_ids
+        report = load_json("monday_report.json")
+        es = (report or {}).get("executive_summary", {})
+        accuracy = load_json("forecast_accuracy.json")
+
+        reorder_df = load_csv("reorder_recommendations.csv")
+        forecasts_df = load_csv("forecasts.csv")
+
+        urgent_count = 0
+        revenue_at_risk = 0
+        top_risk = None
+        if not reorder_df.empty:
+            stockouts = reorder_df[reorder_df["flags"].fillna("").str.contains("STOCKOUT_RISK")]
+            urgent_count = int(len(stockouts))
+            revenue_at_risk = int(stockouts["revenue_at_risk"].sum()) if "revenue_at_risk" in stockouts else 0
+            if len(stockouts) > 0:
+                top = stockouts.nsmallest(1, "weeks_of_stock").iloc[0]
+                top_risk = {
+                    "sku_id": str(top.get("sku_id", "")),
+                    "product_name": str(top.get("product_name", "")),
+                    "weeks_of_stock": float(top.get("weeks_of_stock", 0) or 0),
+                    "revenue_at_risk": int(top.get("revenue_at_risk", 0) or 0),
+                }
+
+        # Real forecast trajectory (sum of all-SKU weekly forecasts) for the
+        # 6-week horizon — drives the dashboard mini sparkline.
+        weekly_totals = []
+        if not forecasts_df.empty and "week_start_date" in forecasts_df.columns:
+            try:
+                weekly_totals = (forecasts_df.groupby("week_start_date")["forecasted_units"]
+                                 .sum().sort_index().astype(int).tolist())
+            except Exception:
+                weekly_totals = []
+
+        return jsonify({
+            "executive_summary": es,
+            "pipeline": get_latest_pipeline_run(),
+            "accuracy": {
+                "overall_mape": (accuracy or {}).get("overall_mape", 0),
+                "lgbm_count": (accuracy or {}).get("lgbm_count", 0),
+                "low_confidence_skus": (accuracy or {}).get("low_confidence_skus", []),
+            },
+            "urgent_count": urgent_count,
+            "revenue_at_risk": revenue_at_risk,
+            "top_risk": top_risk,
+            "forecast_weekly_totals": weekly_totals,
+            "report_date": (report or {}).get("report_date"),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
 @app.route("/api/data-quality")
 @login_required
 def api_data_quality():
@@ -282,12 +425,18 @@ def api_data_quality():
 
         # Classification breakdown
         cls_counts = sales["row_classification"].value_counts().to_dict()
-        total_rows = len(sales)
+        # Acceptance rate is computed over rows that were actually collected
+        # (observed + explicitly-classified). missing_data covers the 1.9M
+        # grid reconstruction where the outlet never reported — counting that
+        # as "rejected" tanks the rate to ~4% and is misleading.
         accepted_classes = ["observed", "true_zero"]
-        rejected_classes = ["missing_data", "stockout_gap", "uncertain_excluded"]
+        rejected_classes = ["stockout_gap", "uncertain_excluded"]
+        missing_classes = ["missing_data"]
         accepted = sum(cls_counts.get(c, 0) for c in accepted_classes)
         rejected = sum(cls_counts.get(c, 0) for c in rejected_classes)
-        rate = (accepted / total_rows * 100) if total_rows > 0 else 0
+        missing = sum(cls_counts.get(c, 0) for c in missing_classes)
+        denom = accepted + rejected
+        rate = (accepted / denom * 100) if denom > 0 else 0
 
         # Weekly stats for chart (simulate from sales data by week)
         sales["week_start_date"] = pd.to_datetime(sales["week_start_date"])
@@ -299,6 +448,7 @@ def api_data_quality():
         weekly_labels = []
         for w in last_8_weeks:
             wk_data = sales[sales["week_start_date"] == w]
+            # Per-week chart also excludes missing_data so the bars are visible.
             wa = len(wk_data[wk_data["row_classification"].isin(accepted_classes)])
             wr = len(wk_data[wk_data["row_classification"].isin(rejected_classes)])
             weekly_accepted.append(wa)
@@ -354,6 +504,7 @@ def api_data_quality():
         return jsonify({
             "accepted_rows": accepted,
             "rejected_rows": rejected,
+            "missing_rows": missing,
             "acceptance_rate": round(rate, 1),
             "outlets_not_reporting": outlets_not_reporting,
             "outlet_reporting_pct": round(len(outlets_in_sales) / max(len(all_outlets), 1) * 100, 1),
@@ -378,7 +529,8 @@ def api_supplier_performance():
     """Phase 9 fix: Supplier lead times from DB with P80 calculation."""
     try:
         from database import get_supplier_lead_times
-        return jsonify(get_supplier_lead_times())
+        from auth import get_user_store_ids
+        return jsonify(get_supplier_lead_times(store_ids=get_user_store_ids()))
     except Exception as e:
         return jsonify({"error": str(e), "suppliers": [], "avg_lead_time": 0})
 
@@ -576,35 +728,44 @@ def answer_query(msg, data):
 # OpenRouter API Key (Set this in your environment or .env file)
 OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY", "")
 
-def build_data_context():
-    """Build full data context string for the LLM."""
+
+def _live_counts():
+    """Read SKU and outlet counts from the actual data (D4 fix — no more
+    hardcoded '40 SKUs' / '140 SKUs' string drift)."""
+    try:
+        sku_path = os.path.join(DATA, "sku_master.csv")
+        outlet_path = os.path.join(DATA, "outlet_master.csv")
+        sku_count = 0
+        outlet_count = 0
+        if os.path.exists(sku_path):
+            sku_count = max(0, sum(1 for _ in open(sku_path)) - 1)
+        if os.path.exists(outlet_path):
+            outlet_count = max(0, sum(1 for _ in open(outlet_path)) - 1)
+        return sku_count, outlet_count
+    except Exception:
+        return 0, 0
+
+def build_data_context(query=None):
+    """Build retrieval-based context string for the LLM (Brief Phase 11).
+    If a query is supplied, returns only the top-k most relevant chunks plus
+    the executive summary; otherwise falls back to a short summary blob.
+    Replaces the old "dump everything" pattern that broke at 140 SKUs."""
+    try:
+        from rag import build_context
+        if query:
+            # Larger k + char budget so multi-domain questions (e.g.
+            # "best outlet last week" + "highest stockout SKU") get
+            # both relevant outlet and SKU chunks.
+            ctx = build_context(query, k=10, max_chars=10000)
+            if ctx:
+                return ctx
+    except Exception as e:
+        print(f"[chat] RAG retrieval failed, falling back to summary: {e}")
+    # Fallback: summary only, no per-SKU dump
     d = get_data_cache()
-    ctx = []
-    report = d["report"] or {}
-    es = report.get("executive_summary", {})
-    ctx.append(f"EXECUTIVE SUMMARY: {json.dumps(es)}")
-    for u in report.get("urgent_orders", [])[:10]:
-        ctx.append(f"URGENT: {u['sku_id']} ({u['product_name']}): {u['weeks_of_stock']}w stock, reorder {u['reorder_qty']}, Rs.{u['order_value']:,}, {u.get('reason','')}")
-    cls_rpt = d["classification"] or {}
-    ctx.append(f"CLASSIFICATION: {json.dumps(cls_rpt.get('classification_counts', {}))}, total_rows={cls_rpt.get('total_rows',0)}, observed={cls_rpt.get('original_observed_rows',0)}, reconstructed={cls_rpt.get('reconstructed_rows',0)}")
-    acc = d["accuracy"] or {}
-    ctx.append(f"ACCURACY: overall_mape={acc.get('overall_mape',0)}%, lgbm={acc.get('lgbm_count',0)}, rolling={acc.get('rolling_avg_count',0)}")
-    for sku, info in (acc.get("per_sku_mape", {})).items():
-        ctx.append(f"  {sku}: MAPE={info['mape']}% ({info['model_used']})")
-    reorder = d["reorder"]
-    if len(reorder) > 0:
-        for _, r in reorder.iterrows():
-            ctx.append(f"REORDER {r['sku_id']} ({r.get('product_name','')}): stock={r.get('available_stock',0)}, {r.get('weeks_of_stock',0)}w, forecast_6w={r.get('forecast_6w_total',0)}, qty={r.get('final_reorder_qty',0)}, Rs.{r.get('order_value_inr',0):,.0f}, flags={r.get('flags','')}, rev_risk={r.get('revenue_at_risk',0)}, reason:{r.get('reason_text','')}")
-    sku_cls = d["sku_class"]
-    if len(sku_cls) > 0:
-        for _, s in sku_cls.iterrows():
-            ctx.append(f"SKU_CLASS {s['sku_id']} ({s.get('product_name','')}): {s.get('movement_class','')}, ABC={s.get('abc_class','')}, avg_weekly={s.get('avg_weekly_sales',0):.0f}, revenue=Rs.{s.get('total_revenue',0):,.0f}")
-    retro = d["retro"] or {}
-    racc = retro.get("accuracy", {})
-    ctx.append(f"DIWALI RETRO: correct={racc.get('correctly_identified',0)}/14, missed={racc.get('missed_skus',[])}")
-    for s in retro.get("predicted_stockout_skus", []):
-        ctx.append(f"  #{s['rank']} {s['sku_id']} ({s['product_name']}): score={s['stockout_score']}/9, signals={s['signals_triggered']}, {s['reasoning']}")
-    return "\n".join(ctx)
+    rep = d.get("report") or {}
+    es = rep.get("executive_summary", {})
+    return f"EXECUTIVE_SUMMARY: {json.dumps(es)}"
 
 @app.route("/api/chat", methods=["POST"])
 @login_required
@@ -617,12 +778,26 @@ def api_chat():
 
     # Try OpenRouter AI first
     try:
-        context = build_data_context()
-        system_prompt = f"""You are the Sunrise Demand AI Assistant for Sunrise Consumer Goods (FMCG distributor, Pune & Nashik, 320 outlets, 40 SKUs).
+        context = build_data_context(query=user_msg)
+        # Pull live counts so the system prompt isn't lying about scale.
+        sku_count, outlet_count = _live_counts()
+        system_prompt = f"""You are Ledgr, the demand-forecasting AI assistant for Sunrise Consumer Goods (FMCG distributor, Pune & Nashik, {outlet_count} outlets, {sku_count} SKUs).
 
-You have COMPLETE access to all pipeline data below. Answer accurately using this data. Be concise, use bullet points and bold for key numbers. Format currency as Rs. with commas. When asked about a specific SKU, provide ALL available details.
+You have access to the full operational data of the system. You can answer questions about ANY of these areas:
 
-=== PIPELINE DATA ===
+• **SKUs / Inventory**: per-SKU forecasts, available stock, weeks of cover, reorder qty, MOQ, lead times, MAPE, stockout/overstock flags, dead stock, expiry alerts, classification (movement_class, ABC).
+• **Outlets**: per-outlet sales leaderboards (last week, last 8 weeks), channel rollups (kirana / supermarket / medical), outlet metadata, outlets that missed reporting.
+• **Suppliers**: per-supplier average lead time, P80 worst-case, festive Oct-Nov estimate, lead-time variance.
+• **Purchase Orders**: PO status (draft / approved / received), supplier grouping, intrastate (CGST+SGST) vs interstate (IGST), recent PO history.
+• **Pipeline**: when the last run completed, current status, step reached, any errors.
+• **Data Quality**: accepted / rejected / never-collected rows, acceptance rate, classification breakdown.
+• **Diwali Retrospective**: recall on the known-14 stockout SKUs, missed SKUs, false positives, signals triggered.
+• **Batch Expiry**: critical (<14 days), warning (14-30 days), healthy batches.
+• **Forecasts**: 6-week horizon by week.
+
+Read the data below carefully and answer the user's question directly using whatever sections are present. The retrieval system has already pulled the most relevant sections for this query — if a section is below, you have access to that data, so use it to answer (do NOT say "I don't have access" if the section is present). Quote specific SKU IDs, outlet IDs, supplier names, and exact numbers from the data. Be concise — use bullet points and bold for key numbers. Format currency as Rs. with commas. "Last week" means the most recent week in the data set (not real-world last week). Only say data is missing if a section is genuinely not in the context below.
+
+=== DATA RETRIEVED FOR THIS QUERY ===
 {context}
 === END DATA ==="""
 
@@ -661,7 +836,8 @@ def api_batch_expiry():
     """Phase 12 fix: Real batch expiry from DB, not np.random."""
     try:
         from database import get_batch_expiry
-        return jsonify(get_batch_expiry())
+        from auth import get_user_store_ids
+        return jsonify(get_batch_expiry(store_ids=get_user_store_ids()))
     except Exception as e:
         return jsonify({"error": str(e)})
 
@@ -673,55 +849,186 @@ def purchase_orders():
 
 @app.route("/api/generate-po", methods=["POST"])
 @login_required
+@role_required("owner")
 def api_generate_po():
-    """Generate GST-compliant purchase order from reorder recommendations."""
+    """Brief Part 6A: GST-compliant purchase order generation.
+    - Reads sku.gst_rate / hsn_code from DB (no hardcoded 18%).
+    - Groups items by supplier so one PO = one supplier (real-world).
+    - Detects interstate vs intrastate via store.state vs supplier_state →
+      emits IGST or CGST+SGST accordingly.
+    - Persists each PO to the purchase_orders table with PO-YYYYMMDD-NNN
+      sequencing per day per store.
+    - Items missing required GST fields (HSN code, supplier name, gstin)
+      are returned as a 'blocked_items' list so the UI can prompt the user
+      to fill them in SKU management before re-attempting."""
     try:
-        from datetime import datetime, timedelta
+        from datetime import date, datetime as _dt, timedelta as _td
+        from models import PurchaseOrder, POStatus, SKU, Store
+        from auth import get_user_store_ids
+
         data = request.json or {}
-        sku_ids = data.get("sku_ids", [])
+        requested_skus = data.get("sku_ids", [])
         reorder = load_csv("reorder_recommendations.csv")
-        sku_master = load_csv("sku_master.csv", DATA)
         if len(reorder) == 0:
-            return jsonify({"status":"error","message":"No reorder data"})
-        if sku_ids:
-            selected = reorder[reorder["sku_id"].isin(sku_ids)]
+            return jsonify({"status": "error", "message": "No reorder data — run pipeline first"})
+
+        if requested_skus:
+            target_codes = [s for s in requested_skus]
         else:
-            selected = reorder[reorder["final_reorder_qty"] > 0]
-        po_items = []
-        for _, r in selected.iterrows():
-            ski = sku_master[sku_master["sku_id"]==r["sku_id"]]
-            cost = float(ski.iloc[0]["cost_price"]) if len(ski) > 0 else 0
-            gst_rate = 18.0  # Default GST
-            qty = int(r["final_reorder_qty"])
-            base = cost * qty
-            cgst = base * (gst_rate/2) / 100
-            sgst = base * (gst_rate/2) / 100
-            po_items.append({
-                "sku_id": r["sku_id"], "product_name": r.get("product_name",""),
-                "qty": qty, "unit_price": cost,
-                "base_amount": round(base, 2),
-                "cgst_rate": gst_rate/2, "cgst_amount": round(cgst, 2),
-                "sgst_rate": gst_rate/2, "sgst_amount": round(sgst, 2),
-                "total": round(base + cgst + sgst, 2)
+            target_codes = reorder[reorder["final_reorder_qty"] > 0]["sku_id"].astype(str).tolist()
+        if not target_codes:
+            return jsonify({"status": "error", "message": "No SKUs need reorder right now"})
+
+        store_ids = get_user_store_ids() or []
+        if not store_ids:
+            return jsonify({"status": "error", "message": "User has no store assignment"}), 403
+        primary_store = Store.query.get(store_ids[0])
+        if not primary_store:
+            return jsonify({"status": "error", "message": "Primary store not found"})
+        buyer_state = (primary_store.state or "Maharashtra").strip().lower()
+
+        skus = SKU.query.filter(SKU.sku_code.in_(target_codes),
+                                SKU.store_id.in_(store_ids)).all()
+        sku_by_code = {s.sku_code: s for s in skus}
+
+        # Group selected SKUs by supplier_name (one PO per supplier)
+        groups = {}
+        blocked = []
+        for code in target_codes:
+            sku = sku_by_code.get(code)
+            if not sku:
+                continue
+            qty_row = reorder[reorder["sku_id"] == code]
+            if len(qty_row) == 0:
+                continue
+            qty = int(qty_row.iloc[0]["final_reorder_qty"])
+            if qty <= 0:
+                continue
+            missing = []
+            if not sku.hsn_code: missing.append("hsn_code")
+            if not sku.supplier_name: missing.append("supplier_name")
+            if not sku.supplier_gstin: missing.append("supplier_gstin")
+            if not sku.gst_rate: missing.append("gst_rate")
+            if missing:
+                blocked.append({"sku_id": code, "missing_fields": missing})
+                continue
+            groups.setdefault(sku.supplier_name, []).append((sku, qty, qty_row.iloc[0]))
+
+        if blocked and not groups:
+            return jsonify({
+                "status": "error",
+                "message": f"{len(blocked)} SKU(s) blocked from PO generation — fill GST/supplier fields in SKU Management first.",
+                "blocked_items": blocked
+            }), 400
+
+        today = _dt.utcnow().date()
+        date_prefix = today.strftime("%Y%m%d")
+        # Find max sequence used today for this store
+        existing_today = PurchaseOrder.query.filter(
+            PurchaseOrder.po_number.like(f"PO-{date_prefix}-%"),
+            PurchaseOrder.store_id == primary_store.id
+        ).all()
+        seq = max((int(p.po_number.split("-")[-1]) for p in existing_today), default=0)
+
+        purchase_orders = []
+        for supplier_name, items in groups.items():
+            sample_sku = items[0][0]
+            supplier_state = (sample_sku.supplier_state or buyer_state).strip().lower()
+            interstate = supplier_state != buyer_state
+            seq += 1
+            po_number = f"PO-{date_prefix}-{seq:03d}"
+
+            po_items = []
+            total_base = 0.0
+            total_tax = 0.0
+            for sku, qty, _row in items:
+                cost = float(sku.cost_price or 0)
+                rate = float(sku.gst_rate or 0)
+                base = round(cost * qty, 2)
+                if interstate:
+                    igst = round(base * rate / 100, 2)
+                    cgst = sgst = 0.0
+                    item_tax = igst
+                else:
+                    cgst = round(base * (rate / 2) / 100, 2)
+                    sgst = round(base * (rate / 2) / 100, 2)
+                    igst = 0.0
+                    item_tax = cgst + sgst
+                total_base += base
+                total_tax += item_tax
+                po_items.append({
+                    "sku_id": sku.sku_code, "product_name": sku.product_name,
+                    "hsn_code": sku.hsn_code, "qty": qty,
+                    "unit_price": cost, "base_amount": base,
+                    "gst_rate": rate,
+                    "cgst_rate": rate/2 if not interstate else 0,
+                    "cgst_amount": cgst,
+                    "sgst_rate": rate/2 if not interstate else 0,
+                    "sgst_amount": sgst,
+                    "igst_rate": rate if interstate else 0,
+                    "igst_amount": igst,
+                    "total": round(base + item_tax, 2),
+                })
+                # Persist one DB row per item (PO is logical grouping by po_number)
+                po_row = PurchaseOrder(
+                    po_number=po_number,
+                    created_date=today,
+                    sku_id=sku.id,
+                    qty_ordered=qty,
+                    unit_price=cost,
+                    total_value=round(base + item_tax, 2),
+                    hsn_code=sku.hsn_code,
+                    supplier_name=sku.supplier_name,
+                    supplier_gstin=sku.supplier_gstin,
+                    cgst_rate=rate/2 if not interstate else 0,
+                    sgst_rate=rate/2 if not interstate else 0,
+                    igst_rate=rate if interstate else 0,
+                    po_status=POStatus.DRAFT,
+                    store_id=primary_store.id,
+                )
+                db.session.add(po_row)
+
+            purchase_orders.append({
+                "po_number": po_number,
+                "date": today.isoformat(),
+                "supplier_name": supplier_name,
+                "supplier_gstin": sample_sku.supplier_gstin,
+                "supplier_state": sample_sku.supplier_state,
+                "buyer_store": primary_store.name,
+                "buyer_state": primary_store.state,
+                "buyer_gstin": primary_store.gstin,
+                "is_interstate": interstate,
+                "tax_type": "IGST" if interstate else "CGST+SGST",
+                "items": po_items,
+                "subtotal": round(total_base, 2),
+                "total_tax": round(total_tax, 2),
+                "grand_total": round(total_base + total_tax, 2),
+                "item_count": len(po_items),
             })
-        po_number = f"PO-{datetime.now().strftime('%Y%m%d')}-{len(po_items):03d}"
-        total_base = sum(i["base_amount"] for i in po_items)
-        total_tax = sum(i["cgst_amount"]+i["sgst_amount"] for i in po_items)
+        db.session.commit()
+
         return jsonify({
             "status": "success",
-            "po_number": po_number,
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "items": po_items,
-            "subtotal": round(total_base, 2),
-            "total_tax": round(total_tax, 2),
-            "grand_total": round(total_base + total_tax, 2),
-            "item_count": len(po_items)
+            "purchase_orders": purchase_orders,
+            "po_count": len(purchase_orders),
+            "blocked_items": blocked,
+            # Backwards-compat fields for older UI that expects a single PO:
+            "po_number": purchase_orders[0]["po_number"] if purchase_orders else "",
+            "date": today.isoformat(),
+            "items": purchase_orders[0]["items"] if purchase_orders else [],
+            "subtotal": purchase_orders[0]["subtotal"] if purchase_orders else 0,
+            "total_tax": purchase_orders[0]["total_tax"] if purchase_orders else 0,
+            "grand_total": purchase_orders[0]["grand_total"] if purchase_orders else 0,
+            "item_count": purchase_orders[0]["item_count"] if purchase_orders else 0,
         })
     except Exception as e:
-        return jsonify({"status":"error","message":str(e)})
+        db.session.rollback()
+        return jsonify({"status": "error", "message": str(e)})
 
 # ── Data Upload with Validation (Brief Part 2D) ──
 @app.route("/api/upload-sales", methods=["POST"])
+@login_required
+@role_required("owner", "manager")
 def api_upload_sales():
     """Upload weekly sales CSV with validation."""
     try:
@@ -745,6 +1052,7 @@ def api_upload_sales():
 
 @app.route("/api/orders/approve", methods=["POST"])
 @login_required
+@role_required("owner")
 def api_orders_approve():
     """Approve selected reorder recommendations → create PurchaseOrders."""
     try:
@@ -778,6 +1086,58 @@ def api_orders_approve():
         db.session.rollback()
         return jsonify({"status": "error", "message": str(e)})
 
+@app.route("/api/orders/list")
+@login_required
+def api_orders_list():
+    """List all purchase orders (draft + approved + received). Used by the
+    purchase-orders page to show existing POs alongside any newly generated."""
+    from models import PurchaseOrder, SKU
+    qs = request.args.get("status", "").strip().lower()
+    q = db.session.query(PurchaseOrder, SKU).join(SKU, PurchaseOrder.sku_id == SKU.id)
+    if qs:
+        q = q.filter(PurchaseOrder.po_status == qs)
+    rows = q.order_by(PurchaseOrder.created_date.desc(), PurchaseOrder.po_number.desc()).all()
+    # Group rows by po_number so the UI can render one card per PO
+    grouped = {}
+    for po, sku in rows:
+        g = grouped.setdefault(po.po_number, {
+            "po_number": po.po_number,
+            "created_date": po.created_date.isoformat() if po.created_date else None,
+            "supplier_name": po.supplier_name or "",
+            "supplier_gstin": po.supplier_gstin or "",
+            "po_status": po.po_status,
+            "is_interstate": float(po.igst_rate or 0) > 0,
+            "items": [],
+            "subtotal": 0.0, "total_tax": 0.0, "grand_total": 0.0,
+        })
+        base = float(po.unit_price or 0) * int(po.qty_ordered or 0)
+        cgst_amt = base * float(po.cgst_rate or 0) / 100
+        sgst_amt = base * float(po.sgst_rate or 0) / 100
+        igst_amt = base * float(po.igst_rate or 0) / 100
+        item = {
+            "sku_id": sku.sku_code, "product_name": sku.product_name,
+            "hsn_code": sku.hsn_code or "", "qty": int(po.qty_ordered or 0),
+            "unit_price": float(po.unit_price or 0), "base_amount": round(base, 2),
+            "cgst_rate": float(po.cgst_rate or 0), "cgst_amount": round(cgst_amt, 2),
+            "sgst_rate": float(po.sgst_rate or 0), "sgst_amount": round(sgst_amt, 2),
+            "igst_rate": float(po.igst_rate or 0), "igst_amount": round(igst_amt, 2),
+            "total": float(po.total_value or 0),
+        }
+        g["items"].append(item)
+        g["subtotal"] += base
+        g["total_tax"] += (igst_amt if g["is_interstate"] else cgst_amt + sgst_amt)
+        g["grand_total"] += float(po.total_value or 0)
+    out = []
+    for v in grouped.values():
+        v["subtotal"] = round(v["subtotal"], 2)
+        v["total_tax"] = round(v["total_tax"], 2)
+        v["grand_total"] = round(v["grand_total"], 2)
+        v["item_count"] = len(v["items"])
+        v["tax_type"] = "IGST" if v["is_interstate"] else "CGST+SGST"
+        out.append(v)
+    return jsonify(out)
+
+
 @app.route("/api/orders/approved")
 @login_required
 def api_orders_approved():
@@ -793,6 +1153,7 @@ def api_orders_approved():
         "sku_id": sku.sku_code,
         "product_name": sku.product_name,
         "brand": sku.brand,
+        "category": sku.category,
         "qty_ordered": po.qty_ordered,
         "unit_price": float(po.unit_price or 0),
         "total_value": float(po.total_value or 0),
@@ -825,6 +1186,7 @@ def api_orders_in_transit():
             "po_number": po.po_number,
             "sku_id": sku.sku_code,
             "product_name": sku.product_name,
+            "category": sku.category,
             "qty_ordered": po.qty_ordered,
             "supplier_name": po.supplier_name or "",
             "order_date": po.created_date.isoformat() if po.created_date else "",
@@ -835,8 +1197,83 @@ def api_orders_in_transit():
         })
     return jsonify(result)
 
+@app.route("/api/po/<po_number>/approve", methods=["POST"])
+@login_required
+@role_required("owner")
+def api_po_approve(po_number):
+    """Move a draft PO to APPROVED so it surfaces in /reorder Approved Orders tab."""
+    from models import PurchaseOrder, POStatus
+    rows = PurchaseOrder.query.filter_by(po_number=po_number).all()
+    if not rows:
+        return jsonify({"status": "error", "message": "PO not found"}), 404
+    for po in rows:
+        po.po_status = POStatus.APPROVED
+    db.session.commit()
+    return jsonify({"status": "success", "message": f"{po_number} approved ({len(rows)} line items)"})
+
+
+@app.route("/api/po/<po_number>/pdf")
+@login_required
+def api_po_pdf(po_number):
+    """Brief Part 6A: download a PO as a GST-compliant PDF invoice.
+    Aggregates all DB rows sharing the same po_number (one row per item),
+    determines interstate/intrastate, and renders via po_pdf.render_po_pdf."""
+    from models import PurchaseOrder, SKU, Store
+    from auth import get_user_store_ids
+    rows = db.session.query(PurchaseOrder, SKU).join(
+        SKU, PurchaseOrder.sku_id == SKU.id
+    ).filter(PurchaseOrder.po_number == po_number).all()
+    if not rows:
+        return "PO not found", 404
+    store_ids = get_user_store_ids() or []
+    first_po = rows[0][0]
+    if store_ids and first_po.store_id not in store_ids:
+        return "Forbidden", 403
+    store = Store.query.get(first_po.store_id)
+    is_interstate = float(first_po.igst_rate or 0) > 0
+    items = []
+    for po, sku in rows:
+        rate = float(po.cgst_rate or 0) * 2 if not is_interstate else float(po.igst_rate or 0)
+        base = float(po.unit_price or 0) * int(po.qty_ordered or 0)
+        cgst_amt = base * float(po.cgst_rate or 0) / 100
+        sgst_amt = base * float(po.sgst_rate or 0) / 100
+        igst_amt = base * float(po.igst_rate or 0) / 100
+        items.append({
+            "sku_id": sku.sku_code, "product_name": sku.product_name,
+            "hsn_code": sku.hsn_code or "—",
+            "qty": int(po.qty_ordered or 0),
+            "unit_price": float(po.unit_price or 0),
+            "base_amount": round(base, 2),
+            "gst_rate": rate,
+            "cgst_rate": float(po.cgst_rate or 0),
+            "cgst_amount": round(cgst_amt, 2),
+            "sgst_rate": float(po.sgst_rate or 0),
+            "sgst_amount": round(sgst_amt, 2),
+            "igst_rate": float(po.igst_rate or 0),
+            "igst_amount": round(igst_amt, 2),
+            "total": float(po.total_value or 0),
+        })
+    supplier = {
+        "name": first_po.supplier_name or "—",
+        "gstin": first_po.supplier_gstin or "—",
+        "state": (rows[0][1].supplier_state if rows[0][1] else "—") or "—",
+    }
+    store_meta = {
+        "name": store.name if store else "—",
+        "city": store.city if store else "—",
+        "state": (store.state if store else "—") or "—",
+        "gstin": (store.gstin if store else "—") or "—",
+    }
+    from po_pdf import render_po_pdf
+    pdf_io = render_po_pdf(po_number, items, store_meta, supplier, is_interstate)
+    from flask import send_file as _send_file
+    return _send_file(pdf_io, mimetype="application/pdf",
+                      as_attachment=True, download_name=f"{po_number}.pdf")
+
+
 @app.route("/api/orders/receive", methods=["POST"])
 @login_required
+@role_required("owner", "manager")
 def api_orders_receive():
     """Mark an order as received."""
     from models import PurchaseOrder, POStatus
@@ -852,6 +1289,7 @@ def api_orders_receive():
 
 @app.route("/api/sku/update", methods=["POST"])
 @login_required
+@role_required("owner", "manager")
 def api_sku_update():
     """Update an existing SKU's details."""
     try:
@@ -871,26 +1309,131 @@ def api_sku_update():
         if "shelf_life_days" in data: sku.shelf_life_days = int(data["shelf_life_days"])
         if "moq_from_supplier" in data: sku.moq_from_supplier = int(data["moq_from_supplier"])
         if "supplier_lead_time_days" in data: sku.supplier_lead_time_days = int(data["supplier_lead_time_days"])
+        if "hsn_code" in data: sku.hsn_code = (data["hsn_code"] or None)
+        if "gst_rate" in data: sku.gst_rate = float(data["gst_rate"]) if data["gst_rate"] not in (None, "") else None
+        if "supplier_name" in data: sku.supplier_name = (data["supplier_name"] or None)
+        if "supplier_gstin" in data: sku.supplier_gstin = (data["supplier_gstin"] or None)
+        if "supplier_state" in data: sku.supplier_state = (data["supplier_state"] or None)
         db.session.commit()
         return jsonify({"status": "success", "message": f"{sku_code} updated successfully"})
     except Exception as e:
         db.session.rollback()
         return jsonify({"status": "error", "message": str(e)})
 
+def _lan_ip():
+    """Best-effort: return the host's LAN IP. From inside Docker this
+    typically returns the container's bridge IP (useless for a phone on
+    the host LAN); set LEDGR_PUBLIC_HOST in that case."""
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.5)
+        s.connect(("8.8.8.8", 53))
+        ip = s.getsockname()[0]
+        s.close()
+        # Skip docker bridge addresses — they're not reachable from the phone.
+        if ip.startswith(("172.16.", "172.17.", "172.18.", "172.19.", "172.20.",
+                         "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
+                         "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
+                         "10.0.0.", "127.")):
+            return None
+        return ip
+    except Exception:
+        return None
+
+
+@app.route("/api/qr-pairing")
+@login_required
+def api_qr_pairing():
+    """Returns the pairing JSON the Android scanner reads from a QR code.
+    Resolution order for the server URL:
+      1. LEDGR_PUBLIC_HOST env var (e.g. 192.168.1.10 or 192.168.1.10:5000)
+      2. Request's Host header — works when the user opens the dashboard
+         via the LAN IP directly (http://192.168.1.10:5000/...)
+      3. socket-derived LAN IP (works outside Docker; skipped for bridge IPs)
+      4. Last resort: whatever the request says (likely localhost — phone
+         won't be able to reach this).
+    A phone on the same Wi-Fi cannot reach the laptop's localhost, so the
+    QR has to encode a routable address."""
+    from models import Store
+    from urllib.parse import urlparse, urlunparse
+
+    requested_base = request.host_url.rstrip("/")
+    parsed = urlparse(requested_base)
+    host_only = (parsed.hostname or "").lower()
+    port = parsed.port
+
+    # 1) Explicit env override (recommended for Docker)
+    public_host = (os.environ.get("LEDGR_PUBLIC_HOST") or "").strip()
+
+    if public_host:
+        # Allow either "192.168.x.y" or "192.168.x.y:5000"
+        if ":" in public_host:
+            netloc = public_host
+        else:
+            netloc = f"{public_host}:{port or 5000}"
+        base = urlunparse((parsed.scheme, netloc, "", "", "", ""))
+    elif host_only not in ("localhost", "127.0.0.1", "0.0.0.0", ""):
+        # 2) User accessed via LAN IP — use what they typed.
+        base = requested_base
+    else:
+        # 3) Try to detect (works outside Docker only).
+        lan = _lan_ip()
+        base = (urlunparse((parsed.scheme, f"{lan}:{port or 5000}", "", "", "", ""))
+                if lan else requested_base)
+
+    store = Store.query.first()
+    return jsonify({
+        "server_url": base,
+        "name": (store.name if store else "Ledgr") + " · Ledgr",
+        "issued_at": datetime.utcnow().isoformat() + "Z",
+    })
+
+
+@app.route("/mobile/service-worker.js")
+def mobile_service_worker():
+    """Brief Part 6B: service worker file is served unauthenticated so the
+    browser can register it. The file itself contains no secrets — it just
+    caches the shell URL paths and forwards everything else to fetch()."""
+    sw_path = os.path.join(ROOT, "mobile", "service-worker.js")
+    if not os.path.exists(sw_path):
+        return "Not found", 404
+    resp = send_file(sw_path, mimetype="application/javascript")
+    resp.headers["Service-Worker-Allowed"] = "/mobile/"
+    return resp
+
+@app.route("/mobile/manifest.json")
+def mobile_manifest():
+    """Manifest is served unauthenticated so browsers honour the install prompt
+    even before login."""
+    p = os.path.join(ROOT, "mobile", "manifest.json")
+    if not os.path.exists(p):
+        return "Not found", 404
+    return send_file(p, mimetype="application/manifest+json")
+
 @app.route("/mobile/")
 @app.route("/mobile/<path:filename>")
+@login_required
 def mobile_pwa(filename="index.html"):
-    """Serve the barcode scanner PWA."""
+    """Serve the barcode scanner PWA. Login-gated; PWA shell paths require
+    a valid session (PWA re-auths via /login flow)."""
     mobile_dir = os.path.join(ROOT, "mobile")
-    return send_file(os.path.join(mobile_dir, filename))
+    full = os.path.normpath(os.path.join(mobile_dir, filename))
+    if not full.startswith(mobile_dir):
+        return "Forbidden", 403
+    if not os.path.exists(full):
+        return "Not found", 404
+    return send_file(full)
 
 @app.route("/api/sku/scan", methods=["POST"])
 @login_required
 def api_sku_scan():
-    """Phase 10 fix: Barcode scan writes to DB, not JSON file."""
+    """Phase 10 fix: Barcode scan writes to DB, not JSON file. Salesman-scoped
+    to their assigned stores so a Nashik scanner can't write Pune batches."""
     try:
         from database import log_barcode_scan
-        ok, msg = log_barcode_scan(request.json)
+        from auth import get_user_store_ids
+        ok, msg = log_barcode_scan(request.json, store_ids=get_user_store_ids())
         return jsonify({"status": "success" if ok else "error", "message": msg})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
@@ -913,18 +1456,26 @@ def page_settings():
 def api_audit_trail():
     """Phase 14 fix: Audit trail from DB, not JSON file."""
     from database import get_audit_trail
-    return jsonify(get_audit_trail())
+    from auth import get_user_store_ids
+    return jsonify(get_audit_trail(store_ids=get_user_store_ids()))
 
 @app.route("/api/audit-trail/add", methods=["POST"])
 @login_required
+@role_required("owner", "manager")
 def api_audit_add():
     """Phase 14 fix: Record adjustment to DB, not JSON file."""
     try:
         from database import add_audit_entry
+        from auth import get_user_store_ids
         data = request.json
         user_name = current_user.full_name if current_user.is_authenticated else "System"
+        stores = get_user_store_ids() or []
+        store_id = stores[0] if stores else None
+        if not store_id:
+            return jsonify({"status": "error", "message": "User has no store assignment"}), 403
         add_audit_entry(user_name, data.get("sku_id",""), data.get("field","warehouse_stock"),
-                        data.get("old_value",0), data.get("new_value",0), data.get("reason",""))
+                        data.get("old_value",0), data.get("new_value",0), data.get("reason",""),
+                        store_id=store_id)
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
@@ -933,12 +1484,28 @@ def api_audit_add():
 @app.context_processor
 def inject_globals():
     ai_mode = "openrouter" if OPENROUTER_KEY else "local"
+    sku_count, outlet_count = _live_counts()
+    show_demo_creds = os.environ.get("FLASK_ENV", "development") != "production" \
+                       and os.environ.get("HIDE_DEMO_CREDENTIALS", "").lower() not in ("1", "true", "yes")
     return {
         "ai_mode": ai_mode,
-        "app_version": "2.0.0"
+        "app_version": "2.0.0",
+        "live_sku_count": sku_count,
+        "live_outlet_count": outlet_count,
+        "show_demo_credentials": show_demo_creds,
     }
 
+os.makedirs("logs", exist_ok=True)
+# First-boot pipeline auto-run: writes monday_report.json + companion files
+# to data/processed/ if they aren't there yet. ensure_pipeline() is a no-op
+# if outputs already exist, so this is safe to run on every import. With
+# gunicorn --preload it fires once in the master process, not per-worker.
+# The Dockerfile sets --timeout 120 to cover the ~45-60s first-boot pipeline.
+if os.environ.get("LEDGR_SKIP_AUTO_PIPELINE", "").lower() not in ("1", "true", "yes"):
+    try:
+        ensure_pipeline()
+    except Exception as _e:
+        print(f"[boot] ensure_pipeline failed (non-fatal): {_e}")
+
 if __name__ == "__main__":
-    os.makedirs("logs", exist_ok=True)
-    ensure_pipeline()
     app.run(debug=True, host="0.0.0.0", port=5000)

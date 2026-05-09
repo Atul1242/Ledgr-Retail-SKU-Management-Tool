@@ -1,81 +1,74 @@
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
-<!-- ── PAGE HEADER ── -->
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
   <h2 style="margin:0;font-size:22px;font-weight:700;color:#1E293B">Dashboard</h2>
+  <span class="text-muted" id="dash-meta" style="font-size:12px">—</span>
 </div>
+
+<!-- ── Pipeline status banner (Brief Phase 7) ── -->
+<div id="pipeline-status-card" style="display:none;margin-bottom:16px"></div>
 
 <!-- ── KPI CARDS ROW ── -->
 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px">
-  <!-- Card 1: Lost Sales -->
+  <!-- Card 1: Revenue at risk -->
   <div class="df-card">
     <div class="df-card-body">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
-          <div class="df-kpi-label text-muted fw-semibold text-uppercase" style="font-size:11px;letter-spacing:0.5px">Projected Lost Sales (Next 14 Days)</div>
-          <div class="df-kpi-value d-flex align-items-center gap-2 mt-1" style="font-size: 24px;">
-            <span id="kpi-lost-sales">₹45,000</span>
-            <span class="text-danger" style="font-size:12px; font-weight:600;"><i class="ti ti-trending-up"></i> +12% vs LW</span>
-          </div>
-          <div style="font-size:11px; color:#64748B; margin-top: 4px;" id="kpi-lost-subtitle">Highest Risk: SKU-012 (Festive Promo)</div>
+          <div class="df-kpi-label text-muted fw-semibold text-uppercase" style="font-size:11px;letter-spacing:0.5px">Revenue at Risk (Stockouts)</div>
+          <div class="df-kpi-value mt-1" style="font-size:24px"><span id="kpi-revenue">—</span></div>
+          <div style="font-size:11px;color:#64748B;margin-top:4px" id="kpi-revenue-subtitle">—</div>
         </div>
-        <span class="df-badge-critical" id="kpi-lost-badge" style="padding: 4px 8px;">CRITICAL</span>
+        <span id="kpi-revenue-badge" class="df-badge-ok" style="padding:4px 8px">—</span>
       </div>
-      <div id="spark-lost" style="margin-top:12px;height:45px"></div>
+      <div id="spark-revenue" style="margin-top:12px;height:45px"></div>
     </div>
   </div>
-  <!-- Card 2: Warehouse Capacity -->
+  <!-- Card 2: Order value to commit -->
   <div class="df-card">
     <div class="df-card-body">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
-          <div class="df-kpi-label text-muted fw-semibold text-uppercase" style="font-size:11px;letter-spacing:0.5px">Hub-Level Warehouse Capacity</div>
-          <div class="df-kpi-value d-flex align-items-center gap-2 mt-1" style="font-size: 24px;">
-            <span id="kpi-warehouse">78%</span>
-            <span class="text-success" style="font-size:12px; font-weight:600;"><i class="ti ti-trending-down"></i> -5% vs LW</span>
-          </div>
-          <div style="font-size:11px; color:#64748B; margin-top: 4px;">Based on total system inventory vs allocated limits</div>
+          <div class="df-kpi-label text-muted fw-semibold text-uppercase" style="font-size:11px;letter-spacing:0.5px">Total Order Value (Pending)</div>
+          <div class="df-kpi-value mt-1" style="font-size:24px"><span id="kpi-ordervalue">—</span></div>
+          <div style="font-size:11px;color:#64748B;margin-top:4px" id="kpi-ordervalue-subtitle">—</div>
         </div>
-        <span class="df-badge-ok" id="kpi-wh-badge" style="padding: 4px 8px;">OK</span>
+        <span id="kpi-ordervalue-badge" class="df-badge-ok" style="padding:4px 8px">—</span>
       </div>
-      <div id="spark-warehouse" style="margin-top:12px;height:45px"></div>
+      <div id="spark-ordervalue" style="margin-top:12px;height:45px"></div>
     </div>
   </div>
-  <!-- Card 3: Forecast Accuracy (MAPE) -->
+  <!-- Card 3: Forecast accuracy -->
   <div class="df-card">
     <div class="df-card-body">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
-          <div class="df-kpi-label text-muted fw-semibold text-uppercase" style="font-size:11px;letter-spacing:0.5px">AI Forecast Accuracy (MAPE)</div>
-          <div class="df-kpi-value d-flex align-items-center gap-2 mt-1" style="font-size: 24px;">
-            <span id="kpi-mape">14.5%</span>
-            <span class="text-success" style="font-size:12px; font-weight:600;"><i class="ti ti-trending-down"></i> -1.2% (Improved)</span>
-          </div>
-          <div style="font-size:11px; color:#64748B; margin-top: 4px;">Weighted Average across top 10 volatile SKUs</div>
+          <div class="df-kpi-label text-muted fw-semibold text-uppercase" style="font-size:11px;letter-spacing:0.5px">Forecast Accuracy (MAPE)</div>
+          <div class="df-kpi-value mt-1" style="font-size:24px"><span id="kpi-mape">—</span></div>
+          <div style="font-size:11px;color:#64748B;margin-top:4px" id="kpi-mape-subtitle">—</div>
         </div>
-        <span class="df-badge-good" id="kpi-mape-badge" style="padding: 4px 8px; background-color: #DCFCE7; color: #16A34A; border-radius: 4px; font-size: 10px; font-weight: 700;">GOOD</span>
+        <span id="kpi-mape-badge" class="df-badge-ok" style="padding:4px 8px">—</span>
       </div>
       <div id="spark-mape" style="margin-top:12px;height:45px"></div>
     </div>
   </div>
 </div>
 
-<!-- ── AI ORDER RECOMMENDATIONS TABLE ── -->
+<!-- ── REORDER TABLE ── -->
 <div class="df-card" style="margin-bottom:20px">
   <div class="df-card-header">
-    <div class="df-card-title"><i class="ti ti-brain" style="color:#3B82F6"></i>AI Order Recommendations (Monday, Week 45)</div>
+    <div class="df-card-title"><i class="ti ti-brain" style="color:#3B82F6"></i>AI Order Recommendations <span id="reorder-meta" class="text-muted" style="font-weight:400;font-size:12px;margin-left:8px"></span></div>
     <div style="display:flex;align-items:center;gap:8px">
-      <a class="df-btn-outline" href="/reorder"><i class="ti ti-layout-grid"></i>Response Widgets</a>
-      <span class="df-menu-dots"><i class="ti ti-dots"></i></span>
+      <a class="df-btn-outline" href="/reorder"><i class="ti ti-list"></i>Open Reorder Manager</a>
     </div>
   </div>
   <div style="overflow-x:auto">
-    <table class="df-table" id="reorder-table">
+    <table class="df-table">
       <thead><tr>
-        <th>SKU ID</th><th>SKU Name</th><th>Forecast (6w)</th><th>Stockout Date</th>
-        <th>MAPE Error</th><th>Safety Stock</th><th>Reorder Qty</th><th>Supplier MOQ</th>
-        <th>Est. Cost</th><th>Flags</th>
+        <th>SKU ID</th><th>Product</th><th>Forecast (6w)</th><th>Stockout Date</th>
+        <th>MAPE</th><th>Safety Stock</th><th>Reorder Qty</th><th>MOQ</th>
+        <th>Order Value</th><th>Flags</th>
       </tr></thead>
       <tbody id="reorder-tbody">
         <tr><td colspan="10" class="loading-pulse" style="text-align:center;padding:24px;color:#94A3B8">Loading recommendations...</td></tr>
@@ -84,40 +77,20 @@
   </div>
 </div>
 
-<!-- ── BOTTOM PANELS ROW ── -->
+<!-- ── BOTTOM PANELS ── -->
 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
-  <!-- Panel 1: SKU Ordering Urgency Pie Chart -->
   <div class="df-card">
-    <div class="df-card-header">
-      <div class="df-card-title" style="font-size:13px"><i class="ti ti-chart-pie" style="color:#3B82F6;margin-right:4px"></i>SKU Ordering Urgency</div>
-    </div>
+    <div class="df-card-header"><div class="df-card-title" style="font-size:13px"><i class="ti ti-chart-pie" style="color:#3B82F6;margin-right:4px"></i>SKU Order Urgency</div></div>
     <div class="df-card-body" style="padding:12px"><div id="chart-urgency" style="height:220px"></div></div>
   </div>
-  <!-- Panel 2: Top 5 Overstock -->
   <div class="df-card">
-    <div class="df-card-header">
-      <div class="df-card-title" style="font-size:13px">Top 5 SKUs by Capital Trapped (Overstock)</div>
-    </div>
-    <div class="df-card-body" style="padding:12px"><div id="chart-overstock" style="height:200px"></div></div>
+    <div class="df-card-header"><div class="df-card-title" style="font-size:13px">Top 5 by Order Value</div></div>
+    <div class="df-card-body" style="padding:12px"><div id="chart-topvalue" style="height:200px"></div></div>
   </div>
-  <!-- Panel 3: Operational Tools -->
   <div class="df-card">
-    <div class="df-card-header">
-      <div class="df-card-title" style="font-size:13px">Operational Tools</div>
-      <span class="df-menu-dots"><i class="ti ti-dots"></i></span>
-    </div>
+    <div class="df-card-header"><div class="df-card-title" style="font-size:13px">Pipeline Health (Recent Runs)</div></div>
     <div class="df-card-body" style="padding:14px">
-      <div style="margin-bottom:16px">
-        <div style="font-size:13px;font-weight:500;margin-bottom:6px"><i class="ti ti-scan" style="margin-right:4px;color:#3B82F6"></i>Real-Time Barcode Scanner Status</div>
-        <span style="display:inline-block;background:#DCFCE7;color:#16A34A;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600"><i class="ti ti-circle-filled" style="font-size:8px;margin-right:4px"></i>Connected, Active</span>
-      </div>
-      <div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <span style="font-size:13px;font-weight:500"><i class="ti ti-brand-whatsapp" style="color:#25D366;margin-right:4px"></i>WhatsApp Report History</span>
-          <span class="df-menu-dots" style="font-size:14px"><i class="ti ti-dots"></i></span>
-        </div>
-        <div id="wa-history" style="display:flex;flex-direction:column;gap:8px"></div>
-      </div>
+      <div id="run-history" style="font-size:12px"></div>
     </div>
   </div>
 </div>
@@ -125,134 +98,187 @@
 
 {% block scripts %}
 <script>
-// ── Sparklines ──
-function spark(el,data,color){new ApexCharts(document.getElementById(el),{chart:{type:'area',height:50,sparkline:{enabled:true},toolbar:{show:false}},series:[{data:data}],stroke:{width:2,curve:'smooth'},fill:{type:'gradient',gradient:{shadeIntensity:1,opacityFrom:0.3,opacityTo:0.05}},colors:[color],tooltip:{enabled:false}}).render();}
-
-// ── Load dashboard data ──
-let allReorders=[];
-async function loadDashboard(){
-  try{
-    const [report,reorder,accuracy]=await Promise.all([
-      fetch('/api/report').then(r=>r.json()),
-      fetch('/api/reorder-recommendations').then(r=>r.json()),
-      fetch('/api/forecast-accuracy').then(r=>r.json())
-    ]);
-    allReorders=reorder;
-
-    // KPIs from report
-    const es=report.executive_summary||{};
-    const stockoutSkus=reorder.filter(r=>r.flags&&r.flags.includes('STOCKOUT_RISK'));
-    const topLoss=stockoutSkus.length>0?stockoutSkus[0]:null;
-    if(topLoss){
-      document.getElementById('kpi-lost-sales').textContent='₹'+Number(topLoss.revenue_at_risk||45000).toLocaleString('en-IN');
-      document.getElementById('kpi-lost-badge').textContent='CRITICAL';
-      document.getElementById('kpi-lost-subtitle').textContent=`Highest Risk: ${topLoss.sku_id} (${topLoss.product_name||'Promo'})`;
-    }else{
-      document.getElementById('kpi-lost-sales').textContent='₹0';
-      document.getElementById('kpi-lost-badge').textContent='SAFE';
-      document.getElementById('kpi-lost-badge').className='df-badge-ok';
-      document.getElementById('kpi-lost-subtitle').textContent='No stockout risks detected.';
-    }
-
-    // Warehouse capacity
-    const totalCap=reorder.reduce((a,r)=>a+(r.available_stock||0),0);
-    const totalMax=reorder.reduce((a,r)=>a+(r.shelf_life_max||100),0);
-    const whPct=totalMax>0?Math.round(totalCap/totalMax*100):78;
-    document.getElementById('kpi-warehouse').textContent=whPct+'%';
-    if(whPct>90){document.getElementById('kpi-wh-badge').textContent='CRITICAL';document.getElementById('kpi-wh-badge').className='df-badge-critical';}
-
-    // MAPE
-    const mapeVal=accuracy.overall_mape_pct||es.average_mape_pct||14.5;
-    document.getElementById('kpi-mape').textContent=mapeVal.toFixed(1)+'%';
-    if(mapeVal>20){document.getElementById('kpi-mape-badge').textContent='WARNING';document.getElementById('kpi-mape-badge').className='df-badge-critical';}
-
-    // Sparklines
-    spark('spark-lost',[30,45,28,55,42,60,45,38],'#EF4444');
-    spark('spark-warehouse',[65,70,72,75,78,76,78,80],'#3B82F6');
-    spark('spark-mape',[18,16,15,14,13,14,15,14.5],'#22C55E');
-
-    // Reorder table
-    renderTable(reorder.slice(0,8));
-
-    // ── SKU Urgency Pie Chart ──
-    const urgentCount=reorder.filter(r=>r.flags&&r.flags.includes('STOCKOUT_RISK')).length;
-    const needsReorder=reorder.filter(r=>r.final_reorder_qty>0&&!(r.flags||'').includes('STOCKOUT_RISK')).length;
-    const totalSKUs=40;
-    const healthyCount=Math.max(0,totalSKUs-urgentCount-needsReorder);
-    new ApexCharts(document.getElementById('chart-urgency'),{
-      chart:{type:'donut',height:220},
-      series:[urgentCount,needsReorder,healthyCount],
-      labels:['🚩 Urgent / Stockout Risk','⚠️ Needs Reorder','✅ Healthy'],
-      colors:['#EF4444','#F59E0B','#22C55E'],
-      plotOptions:{pie:{donut:{size:'62%',labels:{show:true,total:{show:true,label:'Total SKUs',fontSize:'12px',color:'#64748B',formatter:()=>totalSKUs},value:{fontSize:'22px',fontWeight:700,color:'#1E293B'}}}}},
-      legend:{position:'bottom',fontSize:'11px',markers:{width:10,height:10,radius:3},itemMargin:{horizontal:8,vertical:4}},
-      dataLabels:{enabled:true,formatter:(val,opts)=>opts.w.config.series[opts.seriesIndex],style:{fontSize:'13px',fontWeight:700},dropShadow:{enabled:false}},
-      stroke:{width:2,colors:['#fff']},
-      tooltip:{y:{formatter:val=>val+' SKUs'}}
-    }).render();
-
-    // Overstock chart
-    const overstockData=reorder.filter(r=>r.overstock_value>0).sort((a,b)=>b.overstock_value-a.overstock_value).slice(0,5);
-    if(overstockData.length>0){
-      new ApexCharts(document.getElementById('chart-overstock'),{
-        chart:{type:'bar',height:190,toolbar:{show:false}},
-        series:[{name:'Capital Trapped',data:overstockData.map(r=>r.overstock_value)}],
-        xaxis:{categories:overstockData.map(r=>r.sku_id),labels:{style:{fontSize:'10px'}}},
-        yaxis:{labels:{formatter:v=>v>=1000?(v/1000).toFixed(0)+'k':v,style:{fontSize:'10px'}}},
-        colors:['#3B82F6'],plotOptions:{bar:{borderRadius:4,columnWidth:'55%'}},
-        dataLabels:{enabled:false},grid:{borderColor:'#E2E8F0',strokeDashArray:4}
-      }).render();
-    } else {
-      const topCost=[...reorder].sort((a,b)=>(b.order_value_inr||0)-(a.order_value_inr||0)).slice(0,5);
-      new ApexCharts(document.getElementById('chart-overstock'),{
-        chart:{type:'bar',height:190,toolbar:{show:false}},
-        series:[{name:'Order Value',data:topCost.map(r=>r.order_value_inr||0)}],
-        xaxis:{categories:topCost.map(r=>r.sku_id),labels:{style:{fontSize:'10px'},rotate:-45}},
-        yaxis:{labels:{formatter:v=>v>=1000?(v/1000).toFixed(0)+'k':v,style:{fontSize:'10px'}}},
-        colors:['#3B82F6'],plotOptions:{bar:{borderRadius:4,columnWidth:'55%'}},
-        dataLabels:{enabled:false},grid:{borderColor:'#E2E8F0',strokeDashArray:4}
-      }).render();
-    }
-
-    // WhatsApp history
-    const waHist=document.getElementById('wa-history');
-    const times=['10d ago','17min ago','8m ago','2...'];
-    for(let i=0;i<4;i++){
-      waHist.innerHTML+=`<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#64748B">
-        <i class="ti ti-brand-whatsapp" style="color:#25D366;font-size:16px"></i>
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">WhatsApp Report${i>2?' History':''}...</span>
-        <span style="font-size:10px;color:#94A3B8;white-space:nowrap">${times[i]}</span>
-      </div>`;
-    }
-  }catch(e){console.error('Dashboard load error:',e);}
+function spark(id, data, color){
+  if (!data || !data.length) return;
+  new ApexCharts(document.getElementById(id), {
+    chart:{type:'area', height:50, sparkline:{enabled:true}, toolbar:{show:false}},
+    series:[{data}], stroke:{width:2, curve:'smooth'},
+    fill:{type:'gradient', gradient:{shadeIntensity:1, opacityFrom:0.3, opacityTo:0.05}},
+    colors:[color], tooltip:{enabled:false}
+  }).render();
 }
 
-function renderTable(data){
-  document.getElementById('reorder-tbody').innerHTML=data.map(r=>{
-    const flags=(r.flags||'OK').split('|');
-    const flagHtml=flags.map(f=>{
-      if(f==='STOCKOUT_RISK')return'<span class="df-flag df-flag-stockout">🚩 STOCKOUT RISK</span>';
-      if(f==='DEAD_STOCK')return'<span class="df-flag df-flag-dead">⚠️ DEAD STOCK</span>';
-      if(f==='PERISHABLE')return'<span class="df-flag df-flag-perishable">🔥 PERISHABLE</span>';
-      if(f==='SHELF_LIFE_CONSTRAINED')return'<span class="df-flag df-flag-shelf">🧊 SHELF LIMIT</span>';
-      if(f==='OVERSTOCK_RISK')return'<span class="df-flag df-flag-overstock">📦 OVERSTOCK</span>';
-      if(f==='OK')return'<span class="df-flag df-flag-ok">✓ OK</span>';
-      return`<span class="df-flag df-flag-critical">🔴 ${f}</span>`;
+function renderPipelineCard(p){
+  const card = document.getElementById('pipeline-status-card');
+  if (!p || !p.status || p.status === 'idle') { card.style.display='none'; return; }
+  card.style.display='block';
+  const colors = {complete:'#15803D', running:'#1D4ED8', failed:'#B91C1C'};
+  const bg = {complete:'#DCFCE7', running:'#DBEAFE', failed:'#FEE2E2'};
+  const c = colors[p.status] || '#475569';
+  const b = bg[p.status] || '#F1F5F9';
+  const subtitle = p.status === 'running' ? `Step ${p.step_reached || 0}/6 — started ${p.started_at ? new Date(p.started_at).toLocaleString() : '—'}`
+    : p.status === 'complete' ? `Completed ${p.completed_at ? new Date(p.completed_at).toLocaleString() : '—'}`
+    : p.status === 'failed' ? `Failed at step ${p.step_reached || 0}: ${(p.error || 'see logs').substring(0,200)}`
+    : '';
+  card.innerHTML = `
+    <div style="background:${b};border-left:4px solid ${c};padding:12px 16px;border-radius:6px;display:flex;align-items:center;gap:12px">
+      <i class="ti ${p.status==='complete'?'ti-check':p.status==='running'?'ti-loader':'ti-alert-triangle'}" style="font-size:20px;color:${c}"></i>
+      <div style="flex:1">
+        <div style="font-weight:600;color:${c}">Pipeline ${p.status}</div>
+        <div style="font-size:12px;color:#475569;margin-top:2px">${subtitle}</div>
+      </div>
+    </div>`;
+}
+
+function renderRunHistory(history){
+  const el = document.getElementById('run-history');
+  if (!history || !history.length) {
+    el.innerHTML = '<div style="color:#94A3B8;text-align:center;padding:20px;font-size:12px">No pipeline runs yet — trigger one from the Reorder page.</div>';
+    return;
+  }
+  el.innerHTML = history.map(h => {
+    const dot = h.status === 'complete' ? '#22C55E' : h.status === 'running' ? '#3B82F6' : h.status === 'failed' ? '#EF4444' : '#94A3B8';
+    const elapsed = h.elapsed_seconds ? `${h.elapsed_seconds}s` : '—';
+    const when = h.started_at ? new Date(h.started_at).toLocaleString() : '—';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #F1F5F9">
+      <span style="width:8px;height:8px;border-radius:50%;background:${dot}"></span>
+      <span style="flex:1;color:#475569">${when}</span>
+      <span style="color:#94A3B8">${h.status} · step ${h.step_reached}/6 · ${elapsed}</span>
+    </div>`;
+  }).join('');
+}
+
+function fmtINR(v){ return '₹' + Number(v||0).toLocaleString('en-IN'); }
+
+function setKpi(id, value, subtitle, badge, badgeClass){
+  document.getElementById(id).textContent = value;
+  if (subtitle) document.getElementById(id+'-subtitle').textContent = subtitle;
+  const badgeEl = document.getElementById(id+'-badge');
+  if (badge && badgeEl) {
+    badgeEl.textContent = badge;
+    badgeEl.className = badgeClass + ' ms-2';
+  }
+}
+
+async function loadDashboard(){
+  try {
+    const [summary, reorder] = await Promise.all([
+      fetch('/api/dashboard-summary').then(r => r.json()),
+      fetch('/api/reorder-recommendations').then(r => r.json())
+    ]);
+
+    const es = summary.executive_summary || {};
+    const acc = summary.accuracy || {};
+    document.getElementById('dash-meta').textContent =
+      summary.report_date ? `Report ${summary.report_date}` : '';
+
+    // KPI 1 — revenue at risk
+    setKpi('kpi-revenue', fmtINR(summary.revenue_at_risk),
+      summary.top_risk ? `Top: ${summary.top_risk.sku_id} (${summary.top_risk.weeks_of_stock.toFixed(1)}w stock)` : 'No stockout risks',
+      summary.urgent_count > 0 ? `${summary.urgent_count} URGENT` : 'SAFE',
+      summary.urgent_count > 0 ? 'df-badge-critical' : 'df-badge-ok'
+    );
+
+    // KPI 2 — order value
+    const ov = es.total_order_value_inr || 0;
+    setKpi('kpi-ordervalue', fmtINR(ov),
+      `${es.total_skus_to_reorder || 0} SKUs need reorder`,
+      ov > 0 ? 'PENDING' : 'CLEAR',
+      ov > 0 ? 'df-badge-critical' : 'df-badge-ok'
+    );
+
+    // KPI 3 — MAPE
+    const mape = acc.overall_mape || 0;
+    const goodness = mape < 15 ? 'GOOD' : mape < 25 ? 'OK' : 'POOR';
+    const goodClass = mape < 15 ? 'df-badge-ok' : mape < 25 ? 'df-badge-good' : 'df-badge-critical';
+    setKpi('kpi-mape', mape.toFixed(1) + '%',
+      `${acc.lgbm_count || 0} LightGBM models · ${acc.low_confidence_skus.length || 0} low-confidence`,
+      goodness, goodClass
+    );
+
+    // Sparklines from real forecast trajectory
+    const weeks = summary.forecast_weekly_totals || [];
+    spark('spark-revenue', weeks, '#EF4444');
+    spark('spark-ordervalue', weeks, '#3B82F6');
+    // MAPE sparkline: derive a simple histogram of per-SKU MAPE if available.
+    const skuMapes = Object.values((summary.accuracy && summary.accuracy.per_sku_mape) || {}).map(x=>x.mape).filter(Boolean).slice(0,8);
+    spark('spark-mape', skuMapes.length ? skuMapes : weeks, '#22C55E');
+
+    // Pipeline status & history
+    renderPipelineCard(summary.pipeline);
+    renderRunHistory((summary.pipeline||{}).pipeline_history || []);
+
+    // Reorder table
+    document.getElementById('reorder-meta').textContent = `(${reorder.length} SKUs)`;
+    renderReorderTable(reorder.slice(0, 10));
+    renderUrgencyChart(reorder);
+    renderTopValueChart(reorder);
+  } catch (e) {
+    console.error('Dashboard load error:', e);
+    document.getElementById('reorder-tbody').innerHTML =
+      '<tr><td colspan="10" style="text-align:center;padding:24px;color:#d63939">Failed to load dashboard data.</td></tr>';
+  }
+}
+
+function renderReorderTable(data){
+  if (!data.length) {
+    document.getElementById('reorder-tbody').innerHTML =
+      '<tr><td colspan="10" style="text-align:center;padding:24px;color:#94A3B8">No reorder recommendations yet — run pipeline from the Reorder page.</td></tr>';
+    return;
+  }
+  document.getElementById('reorder-tbody').innerHTML = data.map(r => {
+    const flags = (r.flags || 'OK').split('|');
+    const flagHtml = flags.map(f => {
+      const map = {STOCKOUT_RISK:'df-flag-stockout', DEAD_STOCK:'df-flag-dead', PERISHABLE:'df-flag-perishable',
+                   SHELF_LIFE_CONSTRAINED:'df-flag-shelf', OVERSTOCK_RISK:'df-flag-overstock',
+                   EXPIRY_ALERT:'df-flag-perishable', OK:'df-flag-ok'};
+      const cls = map[f] || 'df-flag-critical';
+      return `<span class="df-flag ${cls}">${f.replace(/_/g,' ')}</span>`;
     }).join(' ');
-    const stockoutDate=r.stockout_date_projected||'—';
-    return`<tr>
+    return `<tr>
       <td style="font-weight:600">${r.sku_id}</td>
-      <td><div style="display:flex;align-items:center;gap:8px"><div style="width:36px;height:36px;background:#F8FAFC;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #E2E8F0;flex-shrink:0"><img src="/static/images/products/${r.sku_id}.png" alt="${r.product_name||''}" style="width:32px;height:32px;object-fit:contain" onerror="this.style.display='none';this.parentElement.innerHTML='<i class=\\'ti ti-package\\' style=\\'font-size:14px;color:#94A3B8\\'></i>'"></div><span style="font-size:12px">${r.product_name||''}</span></div></td>
-      <td>${r.forecast_6w_total||0}w</td>
-      <td>${stockoutDate}</td>
+      <td><span style="font-size:12px">${r.product_name||''}</span></td>
+      <td>${r.forecast_6w_total||0}</td>
+      <td>${r.stockout_date_projected || '—'}</td>
       <td>${(r.mape_pct||0).toFixed(1)}%</td>
       <td>${r.safety_stock||0}</td>
       <td style="font-weight:600">${r.final_reorder_qty||0}</td>
       <td>${r.moq||0}</td>
-      <td style="font-weight:500">₹${Number(r.order_value_inr||0).toLocaleString('en-IN')}</td>
+      <td style="font-weight:500">${fmtINR(r.order_value_inr)}</td>
       <td>${flagHtml}</td>
     </tr>`;
   }).join('');
+}
+
+function renderUrgencyChart(reorder){
+  const urgent = reorder.filter(r => (r.flags||'').includes('STOCKOUT_RISK')).length;
+  const reorderNeeded = reorder.filter(r => r.final_reorder_qty > 0 && !(r.flags||'').includes('STOCKOUT_RISK')).length;
+  const total = reorder.length;
+  const healthy = Math.max(0, total - urgent - reorderNeeded);
+  if (!total) return;
+  new ApexCharts(document.getElementById('chart-urgency'), {
+    chart:{type:'donut', height:220},
+    series:[urgent, reorderNeeded, healthy],
+    labels:['Stockout risk', 'Needs reorder', 'Healthy'],
+    colors:['#EF4444', '#F59E0B', '#22C55E'],
+    plotOptions:{pie:{donut:{size:'62%', labels:{show:true, total:{show:true, label:'SKUs', formatter:()=>total}}}}},
+    legend:{position:'bottom', fontSize:'11px'},
+    dataLabels:{enabled:true, formatter:(_,o)=>o.w.config.series[o.seriesIndex]},
+    stroke:{width:2, colors:['#fff']},
+  }).render();
+}
+
+function renderTopValueChart(reorder){
+  const top = [...reorder].filter(r => r.order_value_inr > 0).sort((a,b)=>b.order_value_inr-a.order_value_inr).slice(0,5);
+  if (!top.length) return;
+  new ApexCharts(document.getElementById('chart-topvalue'), {
+    chart:{type:'bar', height:200, toolbar:{show:false}},
+    series:[{name:'Order value', data: top.map(r=>r.order_value_inr)}],
+    xaxis:{categories: top.map(r=>r.sku_id), labels:{style:{fontSize:'10px'}, rotate:-45}},
+    yaxis:{labels:{formatter: v=> v>=1000 ? (v/1000).toFixed(0)+'k' : v, style:{fontSize:'10px'}}},
+    colors:['#3B82F6'], plotOptions:{bar:{borderRadius:4, columnWidth:'55%'}},
+    dataLabels:{enabled:false}, grid:{borderColor:'#E2E8F0', strokeDashArray:4},
+  }).render();
 }
 
 loadDashboard();

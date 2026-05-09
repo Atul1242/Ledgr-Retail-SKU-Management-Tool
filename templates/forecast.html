@@ -2,152 +2,137 @@
 {% block title %}AI Forecasting{% endblock %}
 {% block content %}
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-  <h2 style="margin:0;font-size:22px;font-weight:700">AI Demand Prediction Engine (LightGBM)</h2>
-  <button class="df-btn-outline"><i class="ti ti-download"></i>CSV</button>
-</div>
-
-<!-- 6-panel grid -->
-<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px">
-
-  <!-- Panel 1: Model Status -->
-  <div class="df-card">
-    <div class="df-card-header"><div class="df-card-title"><i class="ti ti-cpu" style="color:#3B82F6"></i>Model Status & Training Control</div></div>
-    <div class="df-card-body">
-      <div style="font-size:13px;margin-bottom:8px"><strong>Current Model:</strong> LightGBM v3.1 (Stable)</div>
-      <div style="font-size:13px;margin-bottom:8px"><strong>Weighted MAPE:</strong> <span class="df-flag df-flag-ok" id="ai-mape">14.5% (Good)</span></div>
-      <div style="font-size:13px;margin-bottom:14px"><strong>Last Trained:</strong> 3 Days Ago (Nov 05, 2026)</div>
-      <button class="btn btn-primary" style="width:100%;font-size:13px;padding:8px;border-radius:6px"><i class="ti ti-refresh me-1"></i>Full Model Retrain</button>
-      <div style="margin-top:14px">
-        <label style="font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;display:block;margin-bottom:6px">Training Date Range</label>
-        <input type="range" style="width:100%" min="0" max="100" value="95">
-        <div style="display:flex;justify-content:space-between;font-size:10px;color:#94A3B8"><span>Jan 01, 2024</span><span>Nov 05, 2026</span></div>
-      </div>
-      <div style="background:#DCFCE7;border-radius:6px;padding:8px 12px;margin-top:10px;font-size:11px;color:#16A34A;font-weight:600">
-        <i class="ti ti-circle-filled" style="font-size:8px;margin-right:4px"></i>Continuous Time Backfill Status: ACTIVE (0 Zeros generated)
-      </div>
-    </div>
-  </div>
-
-  <!-- Panel 2: Festive Calendar -->
-  <div class="df-card">
-    <div class="df-card-header">
-      <div class="df-card-title"><i class="ti ti-calendar-star" style="color:#F97316"></i>Festive Calendar Integration</div>
-      <span class="df-flag" style="background:#DBEAFE;color:#1D4ED8">Interactive</span>
-    </div>
-    <div class="df-card-body">
-      <canvas id="chart-festive" height="160"></canvas>
-      <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;font-size:10px">
-        <span class="df-flag" style="background:#FFF7ED;color:#C2410C;font-size:10px">🎆 Diwali pre-ramp (W-4)</span>
-        <span class="df-flag" style="background:#FEE2E2;color:#DC2626;font-size:10px">🪔 Diwali week</span>
-        <span class="df-flag" style="background:#F0F9FF;color:#0369A1;font-size:10px">🎉 New Year pre-ramp</span>
-      </div>
-      <button class="df-btn-outline" style="margin-top:10px;width:100%;justify-content:center"><i class="ti ti-arrows-move-horizontal"></i>Draggability weight</button>
-    </div>
-  </div>
-
-  <!-- Panel 3: Feature Importance -->
-  <div class="df-card">
-    <div class="df-card-header"><div class="df-card-title"><i class="ti ti-chart-bar" style="color:#8B5CF6"></i>Top 10 Feature Importance</div></div>
-    <div class="df-card-body"><canvas id="chart-features" height="200"></canvas></div>
-  </div>
-
-  <!-- Panel 4: Forecast Horizon -->
-  <div class="df-card">
-    <div class="df-card-header"><div class="df-card-title"><i class="ti ti-chart-area-line" style="color:#22C55E"></i>Forecast Horizon (Next 6 Weeks)</div></div>
-    <div class="df-card-body">
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-        <div style="text-align:center"><div style="font-size:10px;font-weight:600;color:#64748B;margin-bottom:4px">Week 1</div><canvas id="spark-w1" height="50"></canvas></div>
-        <div style="text-align:center"><div style="font-size:10px;font-weight:600;color:#64748B;margin-bottom:4px">Week 2</div><canvas id="spark-w2" height="50"></canvas></div>
-        <div style="text-align:center"><div style="font-size:10px;font-weight:600;color:#64748B;margin-bottom:4px">Week 3</div><canvas id="spark-w3" height="50"></canvas></div>
-        <div style="text-align:center"><div style="font-size:10px;font-weight:600;color:#64748B;margin-bottom:4px">Week 4</div><canvas id="spark-w4" height="50"></canvas></div>
-        <div style="text-align:center"><div style="font-size:10px;font-weight:600;color:#64748B;margin-bottom:4px">Week 5</div><canvas id="spark-w5" height="50"></canvas></div>
-        <div style="text-align:center"><div style="font-size:10px;font-weight:600;color:#64748B;margin-bottom:4px">Week 6</div><canvas id="spark-w6" height="50"></canvas></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Panel 5: Channel Demand -->
-  <div class="df-card">
-    <div class="df-card-header"><div class="df-card-title"><i class="ti ti-building-store" style="color:#2563EB"></i>Channel Demand: Kirana vs Supermarket</div></div>
-    <div class="df-card-body"><canvas id="chart-channel" height="180"></canvas></div>
-  </div>
-
-  <!-- Panel 6: MAPE by Category -->
-  <div class="df-card">
-    <div class="df-card-header"><div class="df-card-title"><i class="ti ti-target" style="color:#EF4444"></i>MAPE Confidence by Category</div></div>
-    <div class="df-card-body"><canvas id="chart-mape-cat" height="180"></canvas></div>
+  <h2 style="margin:0;font-size:22px;font-weight:700">AI Demand Forecasting (LightGBM)</h2>
+  <div style="display:flex;gap:8px">
+    <a class="df-btn-outline" href="/api/download-reorder"><i class="ti ti-download"></i> CSV</a>
+    <a class="df-btn-outline" href="/accuracy"><i class="ti ti-target"></i> Accuracy Detail</a>
   </div>
 </div>
 
-<!-- Right Panel -->
-<aside class="df-right-panel open" id="ai-panel">
-  <div class="df-right-panel-header">
-    <h4>Model Performance & Diagnostics</h4>
-    <button class="df-right-panel-close" onclick="document.getElementById('ai-panel').classList.remove('open');document.querySelector('.df-main').classList.remove('panel-open')"><i class="ti ti-x"></i></button>
+<!-- Top KPI strip -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px" id="forecast-kpis"></div>
+
+<!-- Main 4-panel grid -->
+<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:16px">
+  <div class="df-card">
+    <div class="df-card-header"><div class="df-card-title"><i class="ti ti-chart-area-line" style="color:#22C55E"></i>6-Week Aggregate Forecast</div></div>
+    <div class="df-card-body" style="padding:14px"><div id="chart-horizon" style="height:240px"></div></div>
   </div>
-  <div class="df-right-panel-body">
-    <div style="font-size:13px;font-weight:600;margin-bottom:10px">Top 10 Feature Importance</div>
-    <canvas id="panel-features" height="160"></canvas>
-    <div style="margin-top:16px;font-size:13px;line-height:1.7;color:#475569">
-      <p><strong style="color:#1E293B">AI Retraining Status:</strong> Last run 3 days ago (14.5% MAPE)</p>
-      <p style="margin-top:8px">The model shows strong performance on fast-moving SKUs (MAPE &lt;10%) but struggles with seasonal patterns in the uncertain frequency band (MAPE 18–25%).</p>
-      <p style="margin-top:8px;font-size:11px;color:#94A3B8"><i class="ti ti-brain me-1"></i>Next scheduled retrain: Monday 7:45 AM IST</p>
+  <div class="df-card">
+    <div class="df-card-header"><div class="df-card-title"><i class="ti ti-target" style="color:#EF4444"></i>MAPE by Category</div></div>
+    <div class="df-card-body" style="padding:14px"><div id="chart-mape-cat" style="height:240px"></div></div>
+  </div>
+  <div class="df-card">
+    <div class="df-card-header"><div class="df-card-title"><i class="ti ti-calendar-star" style="color:#F97316"></i>Festive Calendar</div></div>
+    <div class="df-card-body" style="padding:14px"><div id="festive-list" style="font-size:13px;line-height:1.7"></div></div>
+  </div>
+  <div class="df-card">
+    <div class="df-card-header"><div class="df-card-title"><i class="ti ti-list" style="color:#8B5CF6"></i>Most & Least Confident SKUs</div></div>
+    <div class="df-card-body" style="padding:14px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div><div style="font-size:11px;font-weight:600;color:#22C55E;text-transform:uppercase;margin-bottom:6px">Top 5 confident</div><div id="top-confident" style="font-size:12px"></div></div>
+        <div><div style="font-size:11px;font-weight:600;color:#EF4444;text-transform:uppercase;margin-bottom:6px">Top 5 uncertain</div><div id="bottom-confident" style="font-size:12px"></div></div>
+      </div>
     </div>
   </div>
-</aside>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-document.querySelector('.df-main').classList.add('panel-open');
+function fmtINR(v){return '₹' + Number(v||0).toLocaleString('en-IN');}
 
-// Load real MAPE
-fetch('/api/forecast-accuracy').then(r=>r.json()).then(d=>{
-  if(d.overall_mape_pct)document.getElementById('ai-mape').textContent=d.overall_mape_pct.toFixed(1)+'% ('+(d.overall_mape_pct<15?'Good':'Needs Review')+')';
-}).catch(()=>{});
-
-// Festive calendar timeline
-new Chart(document.getElementById('chart-festive'),{type:'bar',data:{
-  labels:['W-6','W-5','W-4','W-3','W-2','W-1','Diwali','W+1','W+2','W+3','W+4','W+5','W+6'],
-  datasets:[{label:'Demand Weight',data:[1.0,1.1,1.3,1.5,1.8,2.2,3.0,2.5,1.8,1.4,1.2,1.1,1.0],
-    backgroundColor:['#93C5FD','#93C5FD','#FDBA74','#FDBA74','#FDBA74','#FCA5A5','#EF4444','#FCA5A5','#FDBA74','#93C5FD','#93C5FD','#93C5FD','#93C5FD'],borderRadius:4}]
-},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{font:{size:9}}},y:{grid:{color:'#E2E8F0'},ticks:{font:{size:9}},min:0,max:3.5}}}});
-
-// Feature importance
-const features=['Moving Avg 8W','Festive Weight','Lead Time Days','Sell Frequency','Promo Flag','Category Enc','Outlet Channel','Stock Level','Season Index','Price Ratio'];
-const featureVals=[9.2,7.8,6.5,5.9,5.1,4.3,3.8,3.2,2.8,2.1];
-function drawFeatures(canvasId){
-  new Chart(document.getElementById(canvasId),{type:'bar',data:{labels:features,datasets:[{data:featureVals,backgroundColor:'#3B82F6',borderRadius:4}]},
-  options:{responsive:true,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:{color:'#E2E8F0'},ticks:{font:{size:9},callback:v=>v+'%'},max:10},y:{grid:{display:false},ticks:{font:{size:10}}}}}});
+function kpi(label, value, sub, color){
+  return `<div class="df-card"><div class="df-card-body" style="padding:14px">
+    <div class="df-kpi-label">${label}</div>
+    <div class="df-kpi-value" style="font-size:22px;color:${color||'#1E293B'}">${value}</div>
+    <div style="font-size:11px;color:#94A3B8">${sub||''}</div>
+  </div></div>`;
 }
-drawFeatures('chart-features');
-drawFeatures('panel-features');
 
-// Weekly sparklines
-function weekSpark(id,data,color){
-  new Chart(document.getElementById(id),{type:'line',data:{labels:['M','T','W','T','F','S','S'],datasets:[{data,borderColor:color,borderWidth:1.5,fill:true,backgroundColor:color+'20',tension:0.4,pointRadius:0}]},
-  options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}}}});
+async function loadForecast(){
+  const [acc, forecasts, reorder] = await Promise.all([
+    fetch('/api/forecast-accuracy').then(r=>r.json()),
+    fetch('/api/forecasts').then(r=>r.json()),
+    fetch('/api/reorder-recommendations').then(r=>r.json())
+  ]);
+
+  // KPIs
+  const overall = acc.overall_mape || acc.overall_mape_pct || 0;
+  const lgbm = acc.lgbm_count || 0;
+  const lowConf = (acc.low_confidence_skus || []).length;
+  const totalSkus = Object.keys(acc.per_sku_mape || {}).length;
+  const source = acc.source === 'database' ? 'Rolling 4-week MAPE (from logs)'
+                : acc.source === 'test_set_fallback' ? 'Test-set MAPE (no actuals yet)'
+                : 'Test-set MAPE';
+  document.getElementById('forecast-kpis').innerHTML = [
+    kpi('Overall MAPE', overall.toFixed(1) + '%', source, overall<15?'#22C55E':overall<25?'#F59E0B':'#EF4444'),
+    kpi('SKUs forecasted', totalSkus, lgbm + ' LightGBM models'),
+    kpi('Low confidence', lowConf, lowConf > 0 ? 'MAPE > 30%' : 'All within range', lowConf>0?'#EF4444':'#22C55E'),
+    kpi('Retrain flag', acc.needs_retrain ? 'Yes' : 'No', acc.needs_retrain ? 'MAPE breached threshold' : 'Within tolerance', acc.needs_retrain?'#EF4444':'#22C55E'),
+  ].join('');
+
+  // 6-week horizon chart from real forecasts.csv
+  const grouped = {};
+  forecasts.forEach(f => { grouped[f.week_start_date] = (grouped[f.week_start_date]||0) + (f.forecasted_units||0); });
+  const weeks = Object.keys(grouped).sort();
+  new ApexCharts(document.getElementById('chart-horizon'), {
+    chart:{type:'area', height:230, toolbar:{show:false}},
+    series:[{name:'Forecasted units', data: weeks.map(w => grouped[w])}],
+    xaxis:{categories: weeks.map(w => w.slice(5))},
+    colors:['#22C55E'], stroke:{curve:'smooth', width:2},
+    fill:{type:'gradient', gradient:{shadeIntensity:1, opacityFrom:0.35, opacityTo:0.05}},
+    dataLabels:{enabled:false}, grid:{borderColor:'#E2E8F0', strokeDashArray:4}
+  }).render();
+
+  // MAPE by category — derived from reorder rows (which carry SKU category + MAPE)
+  const byCat = {};
+  reorder.forEach(r => {
+    const c = r.category || 'unknown';
+    if (!byCat[c]) byCat[c] = {sum:0, n:0};
+    byCat[c].sum += (r.mape_pct || 0); byCat[c].n += 1;
+  });
+  const catLabels = Object.keys(byCat);
+  const catVals = catLabels.map(c => +(byCat[c].sum / byCat[c].n).toFixed(1));
+  new ApexCharts(document.getElementById('chart-mape-cat'), {
+    chart:{type:'bar', height:230, toolbar:{show:false}},
+    series:[{name:'Avg MAPE', data: catVals}],
+    xaxis:{categories: catLabels.map(c => c.replace(/_/g,' '))},
+    colors:['#EF4444'], plotOptions:{bar:{borderRadius:4, columnWidth:'45%'}},
+    yaxis:{labels:{formatter: v => v + '%'}},
+    dataLabels:{enabled:true, formatter: v => v + '%', style:{colors:['#fff'], fontSize:'10px'}},
+    grid:{borderColor:'#E2E8F0', strokeDashArray:4}
+  }).render();
+
+  // Festive calendar from /data/festive_calendar.csv via overview pipeline outputs.
+  // We don't expose it through an API; show this concise note instead so the
+  // page doesn't lie about a fancy bar chart it can't populate.
+  document.getElementById('festive-list').innerHTML = `
+    <div style="color:#475569;line-height:1.7">
+      The reorder engine applies a festive multiplier of <strong>1.5×</strong> to the safety-stock buffer
+      when the current week or any of the next 3 weeks falls within a festive period
+      (read from <code>data/festive_calendar.csv</code>).
+      Diwali, Holi, Eid, Onam, Ganesh Chaturthi etc. are tracked.
+    </div>
+    <div style="margin-top:10px;padding:8px 12px;background:#FEF3C7;border-radius:6px;color:#92400E;font-size:11px">
+      <i class="ti ti-info-circle me-1"></i> Per-week impact weights are tuned via the LightGBM model's
+      <code>is_festive_week</code> + <code>demand_impact_score</code> features (visible in feature importance).
+    </div>`;
+
+  // Most/least confident SKUs from per_sku_mape
+  const mapes = Object.entries(acc.per_sku_mape || {}).map(([sku, info]) => ({sku, mape: info.mape, model: info.model_used}));
+  mapes.sort((a,b)=>a.mape-b.mape);
+  const top = mapes.slice(0, 5);
+  const bottom = mapes.slice(-5).reverse();
+  const renderList = (arr, color) => arr.map(x => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid #F1F5F9">
+      <span><a href="/sku-performance?sku=${x.sku}" style="color:${color};text-decoration:none;font-weight:600">${x.sku}</a> <span style="color:#94A3B8;font-size:11px">${x.model}</span></span>
+      <span style="font-weight:600;color:${color}">${x.mape.toFixed(1)}%</span>
+    </div>`).join('');
+  document.getElementById('top-confident').innerHTML = renderList(top, '#22C55E') || '<div style="color:#94A3B8">—</div>';
+  document.getElementById('bottom-confident').innerHTML = renderList(bottom, '#EF4444') || '<div style="color:#94A3B8">—</div>';
 }
-weekSpark('spark-w1',[20,25,22,28,30,35,32],'#2563EB');
-weekSpark('spark-w2',[25,28,30,26,32,38,35],'#2563EB');
-weekSpark('spark-w3',[30,35,32,38,42,40,45],'#22C55E');
-weekSpark('spark-w4',[35,40,38,45,50,48,55],'#22C55E');
-weekSpark('spark-w5',[40,45,50,48,55,60,58],'#F97316');
-weekSpark('spark-w6',[45,50,55,52,58,65,62],'#EF4444');
 
-// Channel demand
-new Chart(document.getElementById('chart-channel'),{type:'bar',data:{
-  labels:['Snacks','Beverages','Personal Care','Home Care','Dairy'],
-  datasets:[
-    {label:'Kirana',data:[450,320,280,190,150],backgroundColor:'#2563EB',borderRadius:4},
-    {label:'Supermarket',data:[380,410,350,220,180],backgroundColor:'#93C5FD',borderRadius:4}
-  ]
-},options:{responsive:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}},scales:{x:{grid:{display:false},ticks:{font:{size:9}}},y:{grid:{color:'#E2E8F0'},ticks:{font:{size:9}}}}}});
-
-// MAPE by category
-new Chart(document.getElementById('chart-mape-cat'),{type:'doughnut',data:{
-  labels:['Fast Movers (8.2%)','Seasonal (22.1%)','Slow Movers (14.8%)','New SKUs (18.5%)'],
-  datasets:[{data:[35,25,22,18],backgroundColor:['#22C55E','#EF4444','#EAB308','#3B82F6'],borderWidth:2,borderColor:'#fff'}]
-},options:{responsive:true,cutout:'55%',plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:10}}}}});
+loadForecast();
 </script>
 {% endblock %}
