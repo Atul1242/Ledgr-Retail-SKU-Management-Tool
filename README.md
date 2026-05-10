@@ -46,6 +46,63 @@ First boot takes ~60 seconds — Postgres init, schema migration, seed of 40 SKU
 
 ---
 
+## Why owners love Ledgr
+
+The dashboard isn't just charts — every screen replaces something a person was doing manually before, every Monday, on a spreadsheet. The features below are the ones distributors actually quote when asked what changed after rollout.
+
+### Forecasts you can trust before you sign the cheque
+
+- **Overall MAPE on a real 3-year history: 10.44%** — measured on a held-out 8-week window, one LightGBM model per SKU, never aggregated to category.
+- Per-SKU **confidence band** (high / medium / low) shown next to every forecast, so the buyer can override the model on the few SKUs that earned that override.
+- New / sparse SKUs (<10 non-zero weeks) auto-fall-back to a rolling-mean baseline rather than producing a confident-looking lie.
+
+### Stockouts caught _before_ they happen
+
+- **Diwali 2023 retrospective: 10 of 14 known stockouts identified, 4 false positives — zero lookahead bias.** The 5-signal detector (capped surge / demand surge / Diwali 2022 pattern / inventory low / promo overlap) re-runs each year, so next festive season you know exactly which SKUs to overstock.
+- Reorder engine uses **MAPE-driven dynamic safety stock** (0.5× to 2× weekly demand depending on per-SKU forecast accuracy) — high-confidence SKUs no longer carry a wasteful 2-week buffer; low-confidence ones get the cushion they actually need.
+- Week-by-week stockout simulation uses **batch-aware available stock** (skips batches that expire before they could be sold) — so you don't reorder against ghost inventory and you don't write off cases of yoghurt at month-end.
+
+### Money out the door, signed in two clicks
+
+- **GST-compliant PO PDFs** auto-route CGST + SGST for intrastate suppliers and IGST for interstate ones based on the supplier's state vs your store's state — the kind of mistake that costs you a re-do at the auditor's desk.
+- HSN codes pre-filled per category. Multi-line POs grouped by supplier so you sign one PDF per vendor, not 40.
+- **Owner-only "Approve"** with a clear pending → approved → in-transit flow + an Audit Trail of who changed what and why.
+
+### Monday morning runs itself
+
+- APScheduler fires at **07:45 IST every Monday**: logs last week's forecast vs actuals, retrains the LightGBM models, regenerates safety stock, builds the reorder list, ships it on **WhatsApp / Email / Telegram**.
+- The Monday report bundles four sections owners actually read: `executive_summary` (one-line health), `urgent_orders` (today's must-place), `overstock_alerts` (capital trapped on shelves), `expiry_alerts` (batches you'd otherwise write off).
+- Outlet **non-submission detector** flags which distributors missed two consecutive weeks _before_ you reorder against blind spots.
+
+### Floor staff scan, not type
+
+- Native **Android scanner** (CameraX + ML Kit, retail barcodes + QR). Pair-by-QR-code, sign in once, scan all day.
+- **Offline-first**: every scan goes into a local Room queue and uploads when Wi-Fi returns. No "lost the count because the office router rebooted."
+- One scan = one confirm card. Quantity in, save, done. Replaces the tally-sheet-into-Excel step entirely.
+
+### Ask anything, in plain English
+
+- Sparkles button (lower right) opens an LLM chatbot wired to **69 retrieval chunks** spanning every dashboard domain: SKU master, outlets, suppliers, batches, POs, pipeline runs, data quality, forecasts, retrospective accuracy, classification.
+- Real questions answered without waking an analyst:
+  - _"Which outlet sold the most last week?"_ → OL-263 N Mart Aundh Pune, ₹61,212
+  - _"Show supplier performance and lead times."_ → 12 vendors, avg 9.0d, P80 12.0d, festive 15.6d
+  - _"Any batches near expiry?"_ → 29 critical (<14 days), with SKU IDs and exact days remaining
+- TF-IDF retrieval keeps cost bounded as the catalogue grows — token spend doesn't balloon when you add SKU 41 or outlet 321.
+
+### Multi-store, role-aware, audit-ready
+
+- One owner login sees both Pune and Nashik. **Manager logins are auto-scoped** to their store — they can't approve a PO they shouldn't see in the first place.
+- **Audit Trail** logs every inventory adjustment with user, reason, and timestamp. Compliance-ready for GST audits and internal controls.
+- **Data Quality firewall** (`ingestion.py`) rejects negative units, unknown SKU/outlet pairs, duplicates, and >15% week-over-week row-count drops — so a corrupted upload doesn't silently poison next week's forecast.
+
+### One command, five minutes, on any laptop
+
+- `./run.sh` (or `.\run.ps1` on Windows) auto-creates `.env`, detects your LAN IP for Android pairing, finds a free port if 5000 is taken, and waits until the dashboard is genuinely up before printing the URL.
+- First boot ~60 seconds, including the seed and the very first pipeline run. Subsequent boots in ~5 seconds.
+- Reset to a clean demo with `docker compose down -v` — useful before showing a customer.
+
+---
+
 ## What's inside
 
 ### 1. The web app
