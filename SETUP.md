@@ -47,26 +47,39 @@ You can skip this entirely on the first run; the rest of the system doesn't need
 
 ## 4. Launch
 
-**On Linux / macOS** — use the wrapper script (it auto-detects your LAN IP so the Android scanner can connect):
+**Linux / macOS:**
 
 ```bash
 ./run.sh
 ```
 
-**On Windows** (or anywhere `hostname -I` doesn't work) — plain Docker Compose:
+**Windows (PowerShell):**
 
-```bash
-docker compose up
+```powershell
+.\run.ps1
 ```
 
-You'll see Postgres init, the schema migrate, the seed populate (40 SKUs · 320 outlets · 103 batches · supplier/HSN/GST defaults), and the 6-step pipeline auto-run for ~50 seconds. When you see lines like:
+The launcher does all of this for you:
+
+- ✓ Verifies Docker is installed and running (clean error if not)
+- ✓ Auto-creates `.env` from `.env.example` if missing
+- ✓ Detects your LAN IP and exposes it as `LEDGR_PUBLIC_HOST` (so the Android pairing QR is reachable from a phone)
+- ✓ If port 5000 is busy, automatically routes to 5001/5050/8000/8080/8888
+- ✓ Starts the stack in the background
+- ✓ Polls `/login` until the app is genuinely ready before printing the success message
+
+When you see:
 
 ```
-web_1 | PIPELINE COMPLETE: 6/6 steps succeeded in 48.4s
-web_1 | [INFO] Listening at: http://0.0.0.0:5000 (1)
+✓  App is up and answering
+
+Ledgr is ready
+  Dashboard:    http://localhost:5000
+  From phone:   http://192.168.1.10:5000  (same Wi-Fi)
+  Demo login:   owner@sunrise.com / sunrise2024
 ```
 
-…you're ready.
+…you're done. Open the URL.
 
 > **First boot only**: ~60 seconds total (compose builds the image + Postgres init + pipeline). Subsequent `docker compose up` boots in ~5 seconds.
 
