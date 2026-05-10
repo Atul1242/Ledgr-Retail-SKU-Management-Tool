@@ -617,9 +617,6 @@ Issues and feature requests welcome at https://github.com/HoneyBadger-010/Ledgr-
 
 <div align="center">
 
-**Ashutosh Chaudhari**
-*B.Tech Information Technology*
-
 [![GitHub](https://img.shields.io/badge/GitHub-Ashutosh--Chaudhari-181717?logo=github)](https://github.com/Ashutosh-Chaudhari)
 
 </div>
